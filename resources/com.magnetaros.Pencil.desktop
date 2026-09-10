@@ -1,0 +1,17 @@
+[Desktop Entry]
+Name=Pencil
+GenericName=Text Editor
+Comment=Write and format documents
+Categories=Office;WordProcessor;TextEditor;Utility;
+Exec=pencil %f
+Icon=com.magnetaros.Pencil
+Terminal=false
+Type=Application
+StartupNotify=true
+StartupWMClass=com.magnetaros.Pencil
+# Pencil edits a document, not a text buffer, so it claims the formats it can
+# hold rather than every text/* there is: opening a source file in a rich text
+# editor is not what anybody wanted.
+MimeType=text/markdown;text/html;text/plain;
+Keywords=text;editor;write;document;markdown;html;
+DBusActivatable=true

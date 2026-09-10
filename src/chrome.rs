@@ -1,0 +1,374 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+//! The furniture around the document: the toolbar, the find bar, the status
+//! bar, and the panes that open in the context drawer.
+//!
+//! # Why the toolbar asks the engine whether a button applies
+//!
+//! Every button here is the same command the keyboard runs, and a command
+//! answers "would this apply here?" by returning a transaction or not. So a
+//! button is disabled exactly when the shortcut would do nothing — bold greys
+//! out inside a code block because the schema says a code block admits no
+//! marks, and nobody had to write that rule down twice.
+
+use cosmic::iced::{Alignment, Length};
+use cosmic::prelude::*;
+use cosmic::widget;
+
+use nib_model::search::{self, Matching};
+use nib_model::{basic, commands};
+
+use crate::app::{App, Find, Message};
+use crate::config::{CaretShape, MAXIMUM_TEXT_SIZE, MINIMUM_TEXT_SIZE};
+use crate::fl;
+
+impl App {
+    /// The formatting toolbar.
+    pub(crate) fn toolbar(&self) -> Element<'_, Message> {
+        let spacing = cosmic::theme::spacing();
+
+        let mark = |icon: &'static str, tooltip: String, name: &'static str| {
+            let enabled = nib::toolbar_command(self.state(), name).is_some();
+            let active = self.mark_is_on(name);
+            widget::tooltip(
+                widget::button::icon(widget::icon::from_name(icon).size(16))
+                    .class(if active {
+                        cosmic::theme::Button::Suggested
+                    } else {
+                        cosmic::theme::Button::Icon
+                    })
+                    .on_press_maybe(enabled.then_some(Message::Command(name))),
+                widget::text::body(tooltip),
+                widget::tooltip::Position::Bottom,
+            )
+        };
+
+        let block = |label: String, name: &'static str, level: i64| {
+            let enabled = self
+                .schema()
+                .node_id(name)
+                .map(|typ| {
+                    let attrs = (level > 0).then(|| nib_model::attrs! { "level" => level });
+                    commands::set_block_type(typ, attrs)
+                })
+                .is_some_and(|command| command(self.state()).is_some());
+            widget::button::text(label)
+                .class(cosmic::theme::Button::Text)
+                .on_press_maybe(enabled.then_some(Message::Block(name, level)))
+        };
+
+        let structure = |icon: &'static str, tooltip: String, name: &'static str| {
+            widget::tooltip(
+                widget::button::icon(widget::icon::from_name(icon).size(16))
+                    .on_press_maybe(
+                        nib::toolbar_command(self.state(), name)
+                            .is_some()
+                            .then_some(Message::Command(name)),
+                    ),
+                widget::text::body(tooltip),
+                widget::tooltip::Position::Bottom,
+            )
+        };
+
+        widget::row::with_children(vec![
+            block(fl!("paragraph"), basic::nodes::PARAGRAPH, 0).into(),
+            block("H1".into(), basic::nodes::HEADING, 1).into(),
+            block("H2".into(), basic::nodes::HEADING, 2).into(),
+            block("H3".into(), basic::nodes::HEADING, 3).into(),
+            widget::divider::vertical::default().into(),
+            mark("format-text-bold-symbolic", fl!("bold"), "bold").into(),
+            mark("format-text-italic-symbolic", fl!("italic"), "italic").into(),
+            mark(
+                "format-text-underline-symbolic",
+                fl!("underline"),
+                "underline",
+            )
+            .into(),
+            mark(
+                "format-text-strikethrough-symbolic",
+                fl!("strikethrough"),
+                "strikethrough",
+            )
+            .into(),
+            mark("format-text-code-symbolic", fl!("code"), "code").into(),
+            widget::divider::vertical::default().into(),
+            structure(
+                "format-unordered-list-symbolic",
+                fl!("bullet-list"),
+                "bullet_list",
+            )
+            .into(),
+            structure(
+                "format-ordered-list-symbolic",
+                fl!("ordered-list"),
+                "ordered_list",
+            )
+            .into(),
+            structure("format-indent-more-symbolic", fl!("quote"), "quote").into(),
+            widget::space::horizontal().into(),
+            structure("edit-undo-symbolic", fl!("undo"), "undo").into(),
+            structure("edit-redo-symbolic", fl!("redo"), "redo").into(),
+        ])
+        .align_y(Alignment::Center)
+        .spacing(spacing.space_xxxs)
+        .padding(spacing.space_xxs)
+        .into()
+    }
+
+    /// The find and replace bar.
+    pub(crate) fn find_bar(find: &Find) -> Element<'_, Message> {
+        let spacing = cosmic::theme::spacing();
+        let count = if find.query.is_empty() {
+            String::new()
+        } else if find.hits.is_empty() {
+            fl!("no-matches")
+        } else {
+            let at = find.current.map_or(0, |i| i + 1);
+            fl!("match-count", at = at, total = find.hits.len())
+        };
+
+        let matching = match find.matching {
+            Matching::Loose => fl!("matching-loose"),
+            Matching::CaseSensitive => fl!("matching-case"),
+            Matching::WholeWord => fl!("matching-word"),
+            Matching::Regex => fl!("matching-regex"),
+        };
+
+        let mut row = widget::row::with_capacity(9)
+            .align_y(Alignment::Center)
+            .spacing(spacing.space_xxs)
+            .padding(spacing.space_xxs)
+            .push(
+                widget::text_input(fl!("find"), &find.query)
+                    .on_input(Message::FindChanged)
+                    .on_submit(|_| Message::FindNext)
+                    .width(Length::FillPortion(2)),
+            )
+            .push(
+                widget::button::text(matching)
+                    .class(cosmic::theme::Button::Text)
+                    .on_press(Message::CycleMatching),
+            )
+            .push(
+                widget::button::icon(widget::icon::from_name("go-up-symbolic").size(16))
+                    .on_press(Message::FindPrevious),
+            )
+            .push(
+                widget::button::icon(widget::icon::from_name("go-down-symbolic").size(16))
+                    .on_press(Message::FindNext),
+            )
+            .push(widget::text::caption(count).width(Length::Shrink))
+            .push(
+                widget::text_input(fl!("replace-with"), &find.replacement)
+                    .on_input(Message::ReplaceChanged)
+                    .width(Length::FillPortion(2)),
+            )
+            .push(widget::button::text(fl!("replace")).on_press(Message::ReplaceOne))
+            .push(widget::button::text(fl!("replace-all")).on_press(Message::ReplaceAll))
+            .push(
+                widget::button::icon(widget::icon::from_name("window-close-symbolic").size(16))
+                    .on_press(Message::ToggleFind),
+            );
+
+        if let Some(error) = &find.error {
+            row = row.push(widget::text::caption(error.clone()));
+        }
+        widget::container(row).into()
+    }
+
+    /// The bar an error appears in.
+    ///
+    /// A bar rather than a dialog: a failed save is something to read and act
+    /// on, not something to dismiss before the document can be touched again.
+    pub(crate) fn error_bar(error: &str) -> Element<'_, Message> {
+        let spacing = cosmic::theme::spacing();
+        widget::container(
+            widget::row::with_capacity(3)
+                .align_y(Alignment::Center)
+                .spacing(spacing.space_xxs)
+                .push(widget::icon::from_name("dialog-error-symbolic").size(16))
+                .push(widget::text::body(error.to_owned()).width(Length::Fill))
+                .push(
+                    widget::button::icon(
+                        widget::icon::from_name("window-close-symbolic").size(16),
+                    )
+                    .on_press(Message::DismissError),
+                ),
+        )
+        .class(cosmic::theme::Container::Primary)
+        .padding(spacing.space_xxs)
+        .into()
+    }
+
+    /// The status bar: what this document is, and how much of it there is.
+    pub(crate) fn status_bar(&self) -> Element<'_, Message> {
+        let spacing = cosmic::theme::spacing();
+        let count = search::count(self.state().doc());
+        let name = crate::document::title(self.path());
+        let modified = if self.is_dirty() { "\u{2022} " } else { "" };
+
+        widget::container(
+            widget::row::with_capacity(5)
+                .align_y(Alignment::Center)
+                .spacing(spacing.space_s)
+                .push(widget::text::caption(format!("{modified}{name}")))
+                .push(widget::text::caption(if self.format().lossless() {
+                    self.format().to_string()
+                } else {
+                    // A format that cannot hold everything the schema does is
+                    // worth a mark, once, where the format is already named —
+                    // rather than a dialog on every save that nobody reads.
+                    format!("{} •", self.format())
+                }))
+                .push(widget::space::horizontal())
+                .push(widget::text::caption(fl!(
+                    "word-count",
+                    words = count.words,
+                    characters = count.characters
+                )))
+                .push(widget::text::caption(fl!(
+                    "block-count",
+                    blocks = count.blocks
+                ))),
+        )
+        .padding(spacing.space_xxs)
+        .into()
+    }
+
+    /// The settings pane.
+    pub(crate) fn settings_page(&self) -> Element<'_, Message> {
+        let config = self.config();
+        let spacing = cosmic::theme::spacing();
+
+        let caret = widget::dropdown(
+            Self::caret_labels(),
+            CaretShape::all()
+                .iter()
+                .position(|s| *s == config.caret_shape()),
+            |index| {
+                Message::SetCaret(
+                    CaretShape::all()
+                        .get(index)
+                        .copied()
+                        .unwrap_or_default(),
+                )
+            },
+        );
+
+        widget::settings::view_column(vec![
+            widget::settings::section()
+                .title(fl!("text"))
+                .add(widget::settings::item(
+                    fl!("text-size"),
+                    widget::spin_button(
+                        config.text_size.to_string(),
+                        fl!("text-size"),
+                        config.text_size,
+                        1,
+                        MINIMUM_TEXT_SIZE,
+                        MAXIMUM_TEXT_SIZE,
+                        Message::SetTextSize,
+                    ),
+                ))
+                .add(widget::settings::item(
+                    fl!("measure"),
+                    widget::spin_button(
+                        if config.measure == 0 {
+                            fl!("measure-full")
+                        } else {
+                            config.measure.to_string()
+                        },
+                        fl!("measure"),
+                        config.measure,
+                        4,
+                        0,
+                        160,
+                        Message::SetMeasure,
+                    ),
+                ))
+                .into(),
+            widget::settings::section()
+                .title(fl!("caret"))
+                .add(widget::settings::item(fl!("caret-shape"), caret))
+                .add(widget::settings::item(
+                    fl!("caret-blinks"),
+                    widget::toggler(config.caret_blinks).on_toggle(Message::SetCaretBlinks),
+                ))
+                .add(widget::settings::item(
+                    fl!("caret-glides"),
+                    widget::toggler(config.caret_glides).on_toggle(Message::SetCaretGlides),
+                ))
+                .into(),
+        ])
+        .spacing(spacing.space_m)
+        .into()
+    }
+
+    /// Every binding, read out of the keymap rather than written down twice.
+    pub(crate) fn shortcuts_page(&self) -> Element<'_, Message> {
+        let spacing = cosmic::theme::spacing();
+        let mut section = widget::settings::section().title(fl!("shortcuts"));
+        for binding in self.keymap().bindings() {
+            section = section.add(widget::settings::item(
+                describe_binding(binding),
+                widget::text::caption(String::new()),
+            ));
+        }
+        widget::settings::view_column(vec![
+            widget::text::body(fl!("shortcuts-note")).into(),
+            section.into(),
+        ])
+        .spacing(spacing.space_m)
+        .into()
+    }
+
+    /// The about pane.
+    pub(crate) fn about_page() -> Element<'static, Message> {
+        let spacing = cosmic::theme::spacing();
+        widget::column::with_children(vec![
+            widget::text::title3(fl!("pencil")).into(),
+            widget::text::body(fl!("about-body")).into(),
+            widget::text::caption(fl!("about-engine")).into(),
+        ])
+        .spacing(spacing.space_xs)
+        .into()
+    }
+
+    fn caret_labels() -> Vec<String> {
+        CaretShape::all().iter().map(|s| s.label()).collect()
+    }
+}
+
+/// A binding, in the spelling a user recognises.
+fn describe_binding(binding: &nib_model::keymap::Binding) -> String {
+    use nib_model::keymap::{Key, Mods};
+
+    let mut parts = Vec::new();
+    if binding.mods.contains(Mods::PRIMARY) {
+        parts.push("Ctrl".to_owned());
+    }
+    if binding.mods.contains(Mods::ALT) {
+        parts.push("Alt".to_owned());
+    }
+    if binding.mods.contains(Mods::SHIFT) {
+        parts.push("Shift".to_owned());
+    }
+    parts.push(match &binding.key {
+        Key::Char(c) => c.to_uppercase().to_string(),
+        Key::Enter => "Enter".to_owned(),
+        Key::Tab => "Tab".to_owned(),
+        Key::Backspace => "Backspace".to_owned(),
+        Key::Delete => "Delete".to_owned(),
+        Key::Escape => "Escape".to_owned(),
+        Key::Home => "Home".to_owned(),
+        Key::End => "End".to_owned(),
+        Key::PageUp => "Page Up".to_owned(),
+        Key::PageDown => "Page Down".to_owned(),
+        Key::ArrowLeft => "Left".to_owned(),
+        Key::ArrowRight => "Right".to_owned(),
+        Key::ArrowUp => "Up".to_owned(),
+        Key::ArrowDown => "Down".to_owned(),
+        Key::Named(name) => (*name).to_owned(),
+    });
+    parts.join("+")
+}

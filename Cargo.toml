@@ -1,0 +1,53 @@
+[package]
+name = "pencil"
+version = "0.1.0"
+edition = "2024"
+# GPL-3.0-only applies to THIS package — the Pencil application. The Nib
+# engine it is built on is MPL-2.0 and is linked, not absorbed.
+license = "GPL-3.0-only"
+description = "Pencil — a rich text editor for the COSMIC desktop"
+repository = "https://github.com/Magnetar-OS/pencil"
+rust-version = "1.98.1"
+
+[dependencies]
+# --- the Nib engine (MPL-2.0), from its own repository ---
+# Paths until cosmic-ext-nib is published; then version dependencies. The
+# engine is deliberately several crates: the model has no toolkit, the
+# serialisers have no view, and an application takes the ones it uses.
+nib = { path = "../cosmic-ext-nib/crates/nib", package = "cosmic-ext-nib" }
+nib-model = { path = "../cosmic-ext-nib/crates/nib-model", package = "cosmic-ext-nib-model" }
+nib-html = { path = "../cosmic-ext-nib/crates/nib-html", package = "cosmic-ext-nib-html" }
+nib-markdown = { path = "../cosmic-ext-nib/crates/nib-markdown", package = "cosmic-ext-nib-markdown" }
+nib-text = { path = "../cosmic-ext-nib/crates/nib-text", package = "cosmic-ext-nib-text" }
+nib-highlight = { path = "../cosmic-ext-nib/crates/nib-highlight", package = "cosmic-ext-nib-highlight" }
+
+i18n-embed = { version = "0.16", features = ["fluent-system", "desktop-requester"] }
+i18n-embed-fl = "0.10"
+rust-embed = "8.12"
+open = "5.4"
+thiserror = "2"
+tokio = { version = "1.53", features = ["fs", "rt"] }
+
+[dependencies.libcosmic]
+git = "https://github.com/pop-os/libcosmic.git"
+features = ["about", "single-instance", "wgpu", "xdg-portal", "tokio"]
+
+[lib]
+name = "pencil"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pencil"
+path = "src/main.rs"
+
+[dev-dependencies]
+tokio = { version = "1.53", features = ["fs", "macros", "rt-multi-thread"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }

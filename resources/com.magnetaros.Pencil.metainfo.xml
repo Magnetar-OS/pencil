@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.magnetaros.Pencil</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+
+  <name>Pencil</name>
+  <summary>Write and format documents</summary>
+
+  <description>
+    <p>
+      Pencil is a rich text editor for the COSMIC desktop. It edits a document
+      rather than a text buffer: headings are headings, lists are lists, and a
+      document saved as HTML and reopened is the same document, not an
+      approximation of one.
+    </p>
+    <p>Pencil can:</p>
+    <ul>
+      <li>Open and save Markdown, MDC, MDX, HTML and plain text</li>
+      <li>Format with the keyboard, a toolbar, or Markdown shortcuts as you type</li>
+      <li>Find and replace, matching loosely, by case, by whole word, or by regular expression</li>
+      <li>Show an outline of the document's headings</li>
+      <li>Colour code blocks by language</li>
+    </ul>
+    <p>
+      There is no web engine anywhere in it. Text is laid out by the same
+      engine as the rest of the desktop, so a word is the same width here as it
+      is in every other COSMIC application.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">com.magnetaros.Pencil.desktop</launchable>
+
+  <url type="homepage">https://github.com/Magnetar-OS/pencil</url>
+  <url type="bugtracker">https://github.com/Magnetar-OS/pencil/issues</url>
+
+  <developer id="com.magnetaros">
+    <name>Magnetar</name>
+  </developer>
+
+  <content_rating type="oars-1.1" />
+
+  <categories>
+    <category>Office</category>
+    <category>WordProcessor</category>
+  </categories>
+
+  <keywords>
+    <keyword>text</keyword>
+    <keyword>editor</keyword>
+    <keyword>markdown</keyword>
+    <keyword>document</keyword>
+  </keywords>
+
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+
+  <requires>
+    <display_length compare="ge">480</display_length>
+  </requires>
+
+  <releases>
+    <release version="0.1.0" date="2026-09-10">
+      <description>
+        <p>The first release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

@@ -1,0 +1,8 @@
+# Pins the toolchain the app is developed and released against, so a
+# contributor and CI compile with the same rustc as the author. Matches
+# `rust-version` in Cargo.toml — raise both together; when they drift, cargo
+# refuses to build at all. (cosmic-conventions.md: "Toolchain pinned in one
+# place".)
+[toolchain]
+channel = "1.98.1"
+components = ["rustfmt", "clippy"]

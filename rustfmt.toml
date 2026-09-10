@@ -1,0 +1,5 @@
+# The one line the COSMIC ecosystem agrees on where the file exists at all.
+# Unstable, so stable rustfmt ignores it with a warning rather than
+# reformatting; it takes effect on the nightly formatter and in editors that
+# honour it.
+imports_granularity = "Module"
