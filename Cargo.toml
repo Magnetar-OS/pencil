@@ -8,6 +8,10 @@ license = "GPL-3.0-only"
 description = "Pencil — a rich text editor for the COSMIC desktop"
 repository = "https://github.com/Magnetar-OS/pencil"
 rust-version = "1.98.1"
+# Not on crates.io: this application links the Nib widget, a git dependency, and
+# the registry refuses any crate that carries one. Pencil ships as a
+# distribution package, not as a crate.
+publish = false
 
 [dependencies]
 # --- the Nib engine (MPL-2.0), from its own repository ---
