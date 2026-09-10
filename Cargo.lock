@@ -934,7 +934,8 @@ dependencies = [
 
 [[package]]
 name = "cosmic-ext-nib"
-version = "0.1.0"
+version = "1.0.0"
+source = "git+https://github.com/Magnetar-OS/cosmic-ext-nib.git?tag=v1.0.0#ffb2809a51cc29c240aaf8be53f0354d10210275"
 dependencies = [
  "cosmic-ext-nib-html",
  "cosmic-ext-nib-model",
@@ -945,7 +946,8 @@ dependencies = [
 
 [[package]]
 name = "cosmic-ext-nib-highlight"
-version = "0.1.0"
+version = "1.0.0"
+source = "git+https://github.com/Magnetar-OS/cosmic-ext-nib.git?tag=v1.0.0#ffb2809a51cc29c240aaf8be53f0354d10210275"
 dependencies = [
  "cosmic-ext-nib-model",
  "syntect",
@@ -953,7 +955,8 @@ dependencies = [
 
 [[package]]
 name = "cosmic-ext-nib-html"
-version = "0.1.0"
+version = "1.0.0"
+source = "git+https://github.com/Magnetar-OS/cosmic-ext-nib.git?tag=v1.0.0#ffb2809a51cc29c240aaf8be53f0354d10210275"
 dependencies = [
  "cosmic-ext-nib-model",
  "html5ever",
@@ -962,7 +965,8 @@ dependencies = [
 
 [[package]]
 name = "cosmic-ext-nib-markdown"
-version = "0.1.0"
+version = "1.0.0"
+source = "git+https://github.com/Magnetar-OS/cosmic-ext-nib.git?tag=v1.0.0#ffb2809a51cc29c240aaf8be53f0354d10210275"
 dependencies = [
  "cosmic-ext-nib-model",
  "pulldown-cmark",
@@ -970,7 +974,8 @@ dependencies = [
 
 [[package]]
 name = "cosmic-ext-nib-model"
-version = "0.1.0"
+version = "1.0.0"
+source = "git+https://github.com/Magnetar-OS/cosmic-ext-nib.git?tag=v1.0.0#ffb2809a51cc29c240aaf8be53f0354d10210275"
 dependencies = [
  "regex",
  "thiserror 2.0.20",
@@ -979,7 +984,8 @@ dependencies = [
 
 [[package]]
 name = "cosmic-ext-nib-spell"
-version = "0.1.0"
+version = "1.0.0"
+source = "git+https://github.com/Magnetar-OS/cosmic-ext-nib.git?tag=v1.0.0#ffb2809a51cc29c240aaf8be53f0354d10210275"
 dependencies = [
  "cosmic-ext-nib-model",
  "spellbook",
@@ -989,7 +995,8 @@ dependencies = [
 
 [[package]]
 name = "cosmic-ext-nib-text"
-version = "0.1.0"
+version = "1.0.0"
+source = "git+https://github.com/Magnetar-OS/cosmic-ext-nib.git?tag=v1.0.0#ffb2809a51cc29c240aaf8be53f0354d10210275"
 dependencies = [
  "cosmic-ext-nib-model",
  "unicode-segmentation",

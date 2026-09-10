@@ -11,16 +11,22 @@ rust-version = "1.98.1"
 
 [dependencies]
 # --- the Nib engine (MPL-2.0), from its own repository ---
-# Paths until cosmic-ext-nib is published; then version dependencies. The
-# engine is deliberately several crates: the model has no toolkit, the
+# The engine is deliberately several crates: the model has no toolkit, the
 # serialisers have no view, and an application takes the ones it uses.
-nib = { path = "../cosmic-ext-nib/crates/nib", package = "cosmic-ext-nib" }
-nib-model = { path = "../cosmic-ext-nib/crates/nib-model", package = "cosmic-ext-nib-model" }
-nib-html = { path = "../cosmic-ext-nib/crates/nib-html", package = "cosmic-ext-nib-html" }
-nib-markdown = { path = "../cosmic-ext-nib/crates/nib-markdown", package = "cosmic-ext-nib-markdown" }
-nib-text = { path = "../cosmic-ext-nib/crates/nib-text", package = "cosmic-ext-nib-text" }
-nib-highlight = { path = "../cosmic-ext-nib/crates/nib-highlight", package = "cosmic-ext-nib-highlight" }
-nib-spell = { path = "../cosmic-ext-nib/crates/nib-spell", package = "cosmic-ext-nib-spell" }
+#
+# All from git, at a tag, rather than from crates.io — even the six that are
+# published there. The widget cannot be published at all, because it depends on
+# libcosmic and libcosmic is not on crates.io; and a build that took the widget
+# from git and the model from the registry would have two `cosmic-ext-nib-model`
+# crates from two sources, whose `Node` types are not the same type. One source
+# or the other, and the widget decides which.
+nib = { git = "https://github.com/Magnetar-OS/cosmic-ext-nib.git", tag = "v1.0.0", package = "cosmic-ext-nib" }
+nib-model = { git = "https://github.com/Magnetar-OS/cosmic-ext-nib.git", tag = "v1.0.0", package = "cosmic-ext-nib-model" }
+nib-html = { git = "https://github.com/Magnetar-OS/cosmic-ext-nib.git", tag = "v1.0.0", package = "cosmic-ext-nib-html" }
+nib-markdown = { git = "https://github.com/Magnetar-OS/cosmic-ext-nib.git", tag = "v1.0.0", package = "cosmic-ext-nib-markdown" }
+nib-text = { git = "https://github.com/Magnetar-OS/cosmic-ext-nib.git", tag = "v1.0.0", package = "cosmic-ext-nib-text" }
+nib-highlight = { git = "https://github.com/Magnetar-OS/cosmic-ext-nib.git", tag = "v1.0.0", package = "cosmic-ext-nib-highlight" }
+nib-spell = { git = "https://github.com/Magnetar-OS/cosmic-ext-nib.git", tag = "v1.0.0", package = "cosmic-ext-nib-spell" }
 
 i18n-embed = { version = "0.16", features = ["fluent-system", "desktop-requester"] }
 i18n-embed-fl = "0.10"
