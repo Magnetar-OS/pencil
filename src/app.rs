@@ -110,8 +110,6 @@ pub enum Message {
     Clipboard(&'static str),
     /// What the system clipboard held, on the way to being pasted.
     Pasted(Option<String>),
-    /// Show or hide the right-click menu.
-    ShowContextMenu(bool),
 }
 
 /// What is waiting on the unsaved-changes question.
@@ -198,8 +196,6 @@ pub struct App {
     pending: Option<Pending>,
     /// What to carry on with once a save the user asked for completes.
     after_save: Option<Pending>,
-    /// Whether the right-click menu is showing.
-    context_menu_open: bool,
 }
 
 impl App {
@@ -510,7 +506,6 @@ impl cosmic::Application for App {
             context: None,
             pending: None,
             after_save: None,
-            context_menu_open: false,
         };
         app.refresh();
 
@@ -739,10 +734,7 @@ impl cosmic::Application for App {
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Edit(Action::Edit(tr)) => self.apply(*tr),
-            Message::Edit(Action::Context { .. }) => self.context_menu_open = true,
-            Message::ShowContextMenu(open) => self.context_menu_open = open,
             Message::Clipboard(what) => {
-                self.context_menu_open = false;
                 let state = self.doc().state.clone();
                 let selection = state.selection();
                 match what {
@@ -784,6 +776,9 @@ impl cosmic::Application for App {
                 // application's; `open` hands it to the portal.
                 let _ = open::that_detached(&href);
             }
+            // Everything else the widget reports needs nothing from here. A
+            // right-click is the notable one: the widget has already moved the
+            // caret, and the menu opens itself on the button's release.
             Message::Edit(_) => {}
 
             Message::Command(name) => {
@@ -1182,10 +1177,10 @@ impl cosmic::Application for App {
                 .height(Length::Fill),
         )
         .height(Length::Fill);
-        let page = widget::context_menu(
-            page,
-            self.context_menu_open.then(|| self.context_menu()),
-        );
+        // Always present: the widget opens it on the right button's *release*,
+        // and the editor moves the caret on the press — so by the time the
+        // menu appears it is about what was pointed at.
+        let page = widget::context_menu(page, Some(self.context_menu()));
 
         let mut screen = widget::column::with_capacity(6);
         if self.tabs.iter().count() > 1 {

@@ -49,7 +49,7 @@ fn a_project_lists_folders_before_files_each_in_name_order() {
     scratch.dir("archive");
 
     let project = Project::open(scratch.0.clone());
-    let names: Vec<String> = project.entries().iter().map(|e| e.name()).collect();
+    let names: Vec<String> = project.entries().iter().map(pencil::project::Entry::name).collect();
     assert_eq!(names, ["archive", "notes", "apple.md", "zebra.md"]);
 }
 
@@ -63,7 +63,7 @@ fn only_what_pencil_can_open_is_listed() {
     scratch.file("program.rs", "");
 
     let project = Project::open(scratch.0.clone());
-    let names: Vec<String> = project.entries().iter().map(|e| e.name()).collect();
+    let names: Vec<String> = project.entries().iter().map(pencil::project::Entry::name).collect();
     assert_eq!(
         names,
         ["notes.md", "page.html", "plain.txt"],
@@ -81,7 +81,7 @@ fn hidden_and_noisy_folders_are_skipped() {
     scratch.file(".hidden.md", "");
 
     let project = Project::open(scratch.0.clone());
-    let names: Vec<String> = project.entries().iter().map(|e| e.name()).collect();
+    let names: Vec<String> = project.entries().iter().map(pencil::project::Entry::name).collect();
     assert_eq!(names, ["chapters"]);
 }
 
@@ -96,7 +96,7 @@ fn expanding_a_folder_splices_its_children_in_and_collapsing_removes_them() {
     assert_eq!(project.entries().len(), 2, "the folder and the file");
 
     project.toggle(0);
-    let names: Vec<String> = project.entries().iter().map(|e| e.name()).collect();
+    let names: Vec<String> = project.entries().iter().map(pencil::project::Entry::name).collect();
     assert_eq!(names, ["chapters", "one.md", "two.md", "index.md"]);
     assert_eq!(project.entries()[1].depth, 1, "children are one level in");
     assert!(project.entries()[0].expanded);
