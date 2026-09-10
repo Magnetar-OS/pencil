@@ -77,6 +77,68 @@ impl From<CaretShape> for u16 {
     }
 }
 
+/// Which theme the application asks for.
+///
+/// A setting rather than always following the desktop, because a writer who
+/// works in a dark room and a desktop that follows sunrise disagree, and the
+/// document is what is being looked at for hours.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Appearance {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+impl Appearance {
+    #[must_use]
+    pub fn all() -> [Self; 3] {
+        [Self::System, Self::Light, Self::Dark]
+    }
+
+    #[must_use]
+    pub fn label(self) -> String {
+        match self {
+            Self::System => crate::fl!("theme-system"),
+            Self::Light => crate::fl!("theme-light"),
+            Self::Dark => crate::fl!("theme-dark"),
+        }
+    }
+
+    /// The COSMIC theme this asks for.
+    pub fn theme(self) -> cosmic::Theme {
+        match self {
+            Self::System => cosmic::theme::system_preference(),
+            Self::Light => cosmic::Theme::light(),
+            Self::Dark => cosmic::Theme::dark(),
+        }
+    }
+}
+
+impl From<u16> for Appearance {
+    fn from(index: u16) -> Self {
+        Self::all().get(index as usize).copied().unwrap_or_default()
+    }
+}
+
+impl From<Appearance> for u16 {
+    fn from(appearance: Appearance) -> Self {
+        Self::try_from(
+            Appearance::all()
+                .iter()
+                .position(|a| *a == appearance)
+                .unwrap_or(0),
+        )
+        .unwrap_or(0)
+    }
+}
+
+/// How many recently opened files are remembered.
+///
+/// Ten: enough to cover a working week's documents, short enough that the list
+/// is still something to read rather than search.
+pub const RECENT_LIMIT: usize = 10;
+
 #[derive(Clone, Debug, CosmicConfigEntry, Eq, PartialEq)]
 #[version = 1]
 pub struct Config {
@@ -98,6 +160,10 @@ pub struct Config {
     /// eighty characters is one the eye loses its place returning from, and a
     /// maximised window on a wide screen is exactly how that happens.
     pub measure: u16,
+    /// Which theme, by its index in [`Appearance::all`].
+    pub appearance: u16,
+    /// Recently opened files, most recent first.
+    pub recent: Vec<String>,
 }
 
 impl Default for Config {
@@ -109,6 +175,8 @@ impl Default for Config {
             caret_glides: true,
             outline: true,
             measure: 78,
+            appearance: 0,
+            recent: Vec::new(),
         }
     }
 }
@@ -127,6 +195,32 @@ impl Config {
     #[must_use]
     pub fn caret_shape(&self) -> CaretShape {
         CaretShape::from(self.caret)
+    }
+
+    #[must_use]
+    pub fn appearance(&self) -> Appearance {
+        Appearance::from(self.appearance)
+    }
+
+    /// Puts a path at the head of the recent list, without duplicating it.
+    pub fn remember(&mut self, path: &std::path::Path) {
+        let path = path.display().to_string();
+        self.recent.retain(|p| *p != path);
+        self.recent.insert(0, path);
+        self.recent.truncate(RECENT_LIMIT);
+    }
+
+    /// The remembered files that are still there.
+    ///
+    /// Checked on read rather than pruned on write: a file on a drive that is
+    /// not mounted today should come back when it is, not be forgotten.
+    #[must_use]
+    pub fn recent_files(&self) -> Vec<std::path::PathBuf> {
+        self.recent
+            .iter()
+            .map(std::path::PathBuf::from)
+            .filter(|p| p.exists())
+            .collect()
     }
 
     /// The engine's style for these settings, over a theme.

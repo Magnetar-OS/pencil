@@ -63,3 +63,32 @@ shortcuts-note = Every one of these runs the same command the toolbar does, so a
 
 about-body = A rich text editor built on Nib: a document model that cannot represent an invalid document, and a view that draws it with the desktop's own text engine.
 about-engine = No web engine anywhere in the pipeline.
+
+# Appearance
+appearance = Appearance
+theme-system = Follow the desktop
+theme-light = Light
+theme-dark = Dark
+
+# Recent files
+recent = Recent
+recent-none = Nothing opened yet
+clear-recent = Clear
+
+# Unsaved changes
+unsaved-title = Save changes to { $name }?
+unsaved-body = If you do not save, the changes since you last saved will be lost.
+save-changes = Save
+discard-changes = Discard
+cancel = Cancel
+
+# Statistics
+statistics = Statistics
+words = Words
+characters = Characters
+blocks = Blocks
+headings = Headings
+
+zoom-in = Zoom in
+zoom-out = Zoom out
+zoom-reset = Actual size

@@ -16,6 +16,7 @@ use std::path::PathBuf;
 use cosmic::app::{Core, Task};
 use cosmic::cosmic_config::CosmicConfigEntry as _;
 use cosmic::iced::{Length, Subscription};
+use cosmic::Application as _;
 use cosmic::prelude::*;
 use cosmic::widget::{self, nav_bar};
 
@@ -29,7 +30,7 @@ use nib_model::search::{self, Heading, Matching, Query};
 use nib_model::state::{EditorState, Selection};
 use nib_model::{Transaction, basic, commands, history};
 
-use crate::config::{CaretShape, Config};
+use crate::config::{Appearance, CaretShape, Config};
 use crate::document::{Converters, Format};
 use crate::fl;
 
@@ -76,6 +77,30 @@ pub enum Message {
     SetMeasure(u16),
 
     ConfigChanged(Config),
+
+    /// The user asked for something that would discard unsaved work.
+    Confirm(Pending),
+    /// Save first, then do it.
+    ConfirmSave,
+    /// Do it anyway.
+    ConfirmDiscard,
+    /// Do nothing after all.
+    ConfirmCancel,
+
+    ZoomIn,
+    ZoomOut,
+    ZoomReset,
+    SetTheme(Appearance),
+    OpenRecent(PathBuf),
+    ClearRecent,
+}
+
+/// What is waiting on the unsaved-changes question.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Pending {
+    New,
+    Open,
+    OpenPath(PathBuf),
 }
 
 /// The panes that open in the context drawer.
@@ -83,6 +108,8 @@ pub enum Message {
 pub enum ContextPage {
     Settings,
     Shortcuts,
+    Statistics,
+    Recent,
     About,
 }
 
@@ -91,6 +118,8 @@ impl ContextPage {
         match self {
             Self::Settings => fl!("settings"),
             Self::Shortcuts => fl!("shortcuts"),
+            Self::Statistics => fl!("statistics"),
+            Self::Recent => fl!("recent"),
             Self::About => fl!("about"),
         }
     }
@@ -133,9 +162,28 @@ pub struct App {
     nav: nav_bar::Model,
     error: Option<String>,
     context: Option<ContextPage>,
+    /// What the unsaved-changes dialog is asking about.
+    pending: Option<Pending>,
+    /// What to carry on with once a save the user asked for completes.
+    after_save: Option<Pending>,
 }
 
 impl App {
+    /// Puts a path at the head of the recent list.
+    fn remember(&mut self, path: &std::path::Path) {
+        self.config.remember(path);
+        self.write_config();
+    }
+
+    /// Carries on with what the unsaved-changes question was blocking.
+    fn resume(&mut self, pending: Pending) -> Task<Message> {
+        match pending {
+            Pending::New => self.update(Message::New),
+            Pending::Open => self.update(Message::Open),
+            Pending::OpenPath(path) => open_path(path),
+        }
+    }
+
     fn apply(&mut self, tr: Transaction) {
         if tr.doc_changed() {
             self.dirty = true;
@@ -229,6 +277,16 @@ impl App {
     }
 }
 
+/// Reads a file and turns the result into a message.
+fn open_path(path: PathBuf) -> Task<Message> {
+    cosmic::task::future(async move {
+        match crate::document::read(path).await {
+            Ok((path, format, source)) => Message::Opened(path, format, source),
+            Err(error) => Message::Failed(error.to_string()),
+        }
+    })
+}
+
 /// The schema's name for a toolbar command's mark.
 fn mark_name(command: &str) -> &str {
     match command {
@@ -297,9 +355,12 @@ impl cosmic::Application for App {
             nav: nav_bar::Model::default(),
             error: None,
             context: None,
+            pending: None,
+            after_save: None,
         };
         app.refresh();
 
+        let theme = cosmic::command::set_theme(app.config.appearance().theme());
         let task = match flags {
             Some(path) => cosmic::task::future(async move {
                 match crate::document::read(path).await {
@@ -309,7 +370,7 @@ impl cosmic::Application for App {
             }),
             None => Task::none(),
         };
-        (app, task)
+        (app, Task::batch([theme, task]))
     }
 
     fn header_start(&self) -> Vec<Element<'_, Message>> {
@@ -346,6 +407,11 @@ impl cosmic::Application for App {
             .into()
         };
         vec![
+            button(
+                "document-open-recent-symbolic",
+                fl!("recent"),
+                Message::OpenContext(ContextPage::Recent),
+            ),
             button("edit-find-symbolic", fl!("find"), Message::ToggleFind),
             button(
                 "view-list-symbolic",
@@ -356,6 +422,11 @@ impl cosmic::Application for App {
                 "preferences-system-symbolic",
                 fl!("settings"),
                 Message::OpenContext(ContextPage::Settings),
+            ),
+            button(
+                "accessories-calculator-symbolic",
+                fl!("statistics"),
+                Message::OpenContext(ContextPage::Statistics),
             ),
             button(
                 "input-keyboard-symbolic",
@@ -388,6 +459,8 @@ impl cosmic::Application for App {
             match page {
                 ContextPage::Settings => self.settings_page(),
                 ContextPage::Shortcuts => self.shortcuts_page(),
+                ContextPage::Statistics => self.statistics_page(),
+                ContextPage::Recent => self.recent_page(),
                 ContextPage::About => Self::about_page(),
             },
             Message::CloseContext,
@@ -395,16 +468,73 @@ impl cosmic::Application for App {
         .title(page.title()))
     }
 
+    fn dialog(&self) -> Option<Element<'_, Message>> {
+        let pending = self.pending.as_ref()?;
+        let _ = pending;
+        Some(
+            widget::dialog()
+                .title(fl!(
+                    "unsaved-title",
+                    name = crate::document::title(self.path())
+                ))
+                .body(fl!("unsaved-body"))
+                .primary_action(
+                    widget::button::suggested(fl!("save-changes"))
+                        .on_press(Message::ConfirmSave),
+                )
+                .secondary_action(
+                    widget::button::destructive(fl!("discard-changes"))
+                        .on_press(Message::ConfirmDiscard),
+                )
+                .tertiary_action(
+                    widget::button::text(fl!("cancel")).on_press(Message::ConfirmCancel),
+                )
+                .into(),
+        )
+    }
+
     fn subscription(&self) -> Subscription<Message> {
         // The settings are shared with every other COSMIC application's
         // configuration store, so a change made elsewhere arrives here rather
         // than being noticed on the next launch.
-        cosmic::cosmic_config::config_subscription::<_, Config>(
-            std::any::TypeId::of::<Config>(),
-            Self::APP_ID.into(),
-            Config::VERSION,
-        )
-        .map(|update| Message::ConfigChanged(update.config))
+        Subscription::batch([
+            cosmic::cosmic_config::config_subscription::<_, Config>(
+                std::any::TypeId::of::<Config>(),
+                Self::APP_ID.into(),
+                Config::VERSION,
+            )
+            .map(|update| Message::ConfigChanged(update.config)),
+            // Zoom and the file shortcuts are the application's, not the
+            // document's: the editor's keymap produces transactions, and none
+            // of these is one.
+            cosmic::iced::event::listen_with(|event, _status, _window| {
+                let cosmic::iced::Event::Keyboard(
+                    cosmic::iced::keyboard::Event::KeyPressed {
+                        key, modifiers, ..
+                    },
+                ) = event
+                else {
+                    return None;
+                };
+                if !modifiers.command() {
+                    return None;
+                }
+                let cosmic::iced::keyboard::Key::Character(c) = key else {
+                    return None;
+                };
+                match c.as_str() {
+                    "=" | "+" => Some(Message::ZoomIn),
+                    "-" => Some(Message::ZoomOut),
+                    "0" => Some(Message::ZoomReset),
+                    "s" if modifiers.shift() => Some(Message::SaveAs),
+                    "s" => Some(Message::Save),
+                    "o" => Some(Message::Open),
+                    "n" => Some(Message::New),
+                    "f" => Some(Message::ToggleFind),
+                    _ => None,
+                }
+            }),
+        ])
     }
 
     #[allow(clippy::too_many_lines)]
@@ -432,6 +562,14 @@ impl cosmic::Application for App {
             }
 
             Message::New => {
+                // Nothing that would lose work happens without asking. The
+                // one thing a text editor must never do is throw away
+                // something the user typed because they clicked the wrong
+                // button.
+                if self.dirty {
+                    self.pending = Some(Pending::New);
+                    return Task::none();
+                }
                 self.state = fresh_state(&self.schema, self.schema.empty_doc());
                 self.path = None;
                 self.dirty = false;
@@ -439,6 +577,10 @@ impl cosmic::Application for App {
                 self.refresh();
             }
             Message::Open => {
+                if self.dirty {
+                    self.pending = Some(Pending::Open);
+                    return Task::none();
+                }
                 return cosmic::task::future(async {
                     let dialog = cosmic::dialog::file_chooser::open::Dialog::new()
                         .title(fl!("open"));
@@ -457,7 +599,55 @@ impl cosmic::Application for App {
                     }
                 });
             }
-            Message::Opened(path, format, source) => self.load(path, format, &source),
+            Message::Opened(path, format, source) => {
+                self.remember(&path);
+                self.load(path, format, &source);
+            }
+
+            Message::Confirm(pending) => self.pending = Some(pending),
+            Message::ConfirmCancel => self.pending = None,
+            Message::ConfirmSave => {
+                // Save, and let the save's own completion carry on with what
+                // was waiting.
+                let pending = self.pending.take();
+                self.after_save = pending;
+                return self.update(Message::Save);
+            }
+            Message::ConfirmDiscard => {
+                let Some(pending) = self.pending.take() else {
+                    return Task::none();
+                };
+                self.dirty = false;
+                return self.resume(pending);
+            }
+
+            Message::ZoomIn => {
+                let size = self.config.text_size.saturating_add(1);
+                return self.update(Message::SetTextSize(size));
+            }
+            Message::ZoomOut => {
+                let size = self.config.text_size.saturating_sub(1);
+                return self.update(Message::SetTextSize(size));
+            }
+            Message::ZoomReset => {
+                return self.update(Message::SetTextSize(Config::default().text_size));
+            }
+            Message::SetTheme(appearance) => {
+                self.config.appearance = appearance.into();
+                self.write_config();
+                return cosmic::command::set_theme(appearance.theme());
+            }
+            Message::OpenRecent(path) => {
+                if self.dirty {
+                    self.pending = Some(Pending::OpenPath(path));
+                    return Task::none();
+                }
+                return open_path(path);
+            }
+            Message::ClearRecent => {
+                self.config.recent.clear();
+                self.write_config();
+            }
             Message::Save => {
                 let Some(path) = self.path.clone() else {
                     return self.update(Message::SaveAs);
@@ -507,9 +697,14 @@ impl cosmic::Application for App {
                 return self.save_to(path, format);
             }
             Message::Saved(path) => {
+                self.remember(&path);
                 self.path = Some(path);
                 self.dirty = false;
                 self.error = None;
+                // A save that something was waiting on carries on with it.
+                if let Some(pending) = self.after_save.take() {
+                    return self.resume(pending);
+                }
             }
             Message::Failed(message) => self.error = Some(message),
             Message::DismissError => self.error = None,

@@ -19,7 +19,7 @@ use nib_model::search::{self, Matching};
 use nib_model::{basic, commands};
 
 use crate::app::{App, Find, Message};
-use crate::config::{CaretShape, MAXIMUM_TEXT_SIZE, MINIMUM_TEXT_SIZE};
+use crate::config::{Appearance, CaretShape, MAXIMUM_TEXT_SIZE, MINIMUM_TEXT_SIZE};
 use crate::fl;
 
 impl App {
@@ -262,7 +262,23 @@ impl App {
             },
         );
 
+        let appearance = widget::dropdown(
+            Self::appearance_labels(),
+            Appearance::all()
+                .iter()
+                .position(|a| *a == config.appearance()),
+            |index| {
+                Message::SetTheme(
+                    Appearance::all().get(index).copied().unwrap_or_default(),
+                )
+            },
+        );
+
         widget::settings::view_column(vec![
+            widget::settings::section()
+                .title(fl!("appearance"))
+                .add(widget::settings::item(fl!("appearance"), appearance))
+                .into(),
             widget::settings::section()
                 .title(fl!("text"))
                 .add(widget::settings::item(
@@ -311,6 +327,78 @@ impl App {
         .into()
     }
 
+    /// What is in the document, counted.
+    ///
+    /// The status bar carries the two numbers a writer watches; this is the
+    /// rest, for the moments when the question is about the document rather
+    /// than the sentence.
+    pub(crate) fn statistics_page(&self) -> Element<'_, Message> {
+        let spacing = cosmic::theme::spacing();
+        let count = search::count(self.state().doc());
+        let headings = search::outline(self.state().doc()).len();
+        let row = |label: String, value: usize| {
+            widget::settings::item(label, widget::text::body(value.to_string()))
+        };
+        widget::settings::view_column(vec![
+            widget::settings::section()
+                .title(crate::document::title(self.path()))
+                .add(row(fl!("words"), count.words))
+                .add(row(fl!("characters"), count.characters))
+                .add(row(fl!("blocks"), count.blocks))
+                .add(row(fl!("headings"), headings))
+                .into(),
+        ])
+        .spacing(spacing.space_m)
+        .into()
+    }
+
+    /// The files opened lately.
+    ///
+    /// Checked against the filesystem on the way out rather than pruned on the
+    /// way in: a file on a drive that is not mounted today should come back
+    /// when it is, not be forgotten because it was away.
+    pub(crate) fn recent_page(&self) -> Element<'_, Message> {
+        let spacing = cosmic::theme::spacing();
+        let files = self.config().recent_files();
+        if files.is_empty() {
+            return widget::text::body(fl!("recent-none")).into();
+        }
+        let mut section = widget::settings::section();
+        for path in files {
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("?")
+                .to_owned();
+            let parent = path
+                .parent()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
+            section = section.add(
+                widget::button::custom(
+                    widget::column::with_children(vec![
+                        widget::text::body(name).into(),
+                        widget::text::caption(parent).into(),
+                    ])
+                    .spacing(spacing.space_none)
+                    .width(Length::Fill),
+                )
+                .class(cosmic::theme::Button::Text)
+                .width(Length::Fill)
+                .on_press(Message::OpenRecent(path)),
+            );
+        }
+        widget::settings::view_column(vec![
+            section.into(),
+            widget::button::text(fl!("clear-recent"))
+                .class(cosmic::theme::Button::Destructive)
+                .on_press(Message::ClearRecent)
+                .into(),
+        ])
+        .spacing(spacing.space_m)
+        .into()
+    }
+
     /// Every binding, read out of the keymap rather than written down twice.
     pub(crate) fn shortcuts_page(&self) -> Element<'_, Message> {
         let spacing = cosmic::theme::spacing();
@@ -343,6 +431,10 @@ impl App {
 
     fn caret_labels() -> Vec<String> {
         CaretShape::all().iter().map(|s| s.label()).collect()
+    }
+
+    fn appearance_labels() -> Vec<String> {
+        Appearance::all().iter().map(|a| a.label()).collect()
     }
 }
 
