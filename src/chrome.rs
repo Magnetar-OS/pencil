@@ -26,6 +26,13 @@ impl App {
     /// The formatting toolbar.
     pub(crate) fn toolbar(&self) -> Element<'_, Message> {
         let spacing = cosmic::theme::spacing();
+        // A vertical rule is `Fill`-height by default, which makes the row
+        // that holds it `Fill` too — and a `Fill` row in a column with a
+        // `Fill` page underneath it splits the window in half. Pinning the
+        // rule to the height of a button is what keeps the toolbar a toolbar.
+        let separator = || {
+            widget::divider::vertical::default().height(Length::Fixed(20.0))
+        };
 
         let mark = |icon: &'static str, tooltip: String, name: &'static str| {
             let enabled = nib::toolbar_command(self.state(), name).is_some();
@@ -75,7 +82,7 @@ impl App {
             block("H1".into(), basic::nodes::HEADING, 1).into(),
             block("H2".into(), basic::nodes::HEADING, 2).into(),
             block("H3".into(), basic::nodes::HEADING, 3).into(),
-            widget::divider::vertical::default().into(),
+            separator().into(),
             mark("format-text-bold-symbolic", fl!("bold"), "bold").into(),
             mark("format-text-italic-symbolic", fl!("italic"), "italic").into(),
             mark(
@@ -91,7 +98,7 @@ impl App {
             )
             .into(),
             mark("format-text-code-symbolic", fl!("code"), "code").into(),
-            widget::divider::vertical::default().into(),
+            separator().into(),
             structure(
                 "format-unordered-list-symbolic",
                 fl!("bullet-list"),
