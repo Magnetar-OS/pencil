@@ -13,7 +13,7 @@
 
 use cosmic::iced::{Alignment, Length};
 use cosmic::prelude::*;
-use cosmic::widget;
+use cosmic::widget::{self, menu};
 
 use nib_model::search::{self, Matching};
 use nib_model::{basic, commands};
@@ -120,6 +120,43 @@ impl App {
         .spacing(spacing.space_xxxs)
         .padding(spacing.space_xxs)
         .into()
+    }
+
+    /// What a right-click offers.
+    ///
+    /// The same commands as the toolbar and the keyboard, and disabled by the
+    /// same question: a command that would do nothing here is one the menu
+    /// shows greyed rather than one that does nothing when pressed.
+    pub(crate) fn context_menu(&self) -> Vec<menu::Tree<Message>> {
+        let item = |label: String, message: Option<Message>| {
+            menu::Tree::new(cosmic::Element::from(
+                widget::button::text(label)
+                    .class(cosmic::theme::Button::MenuItem)
+                    .width(Length::Fill)
+                    .on_press_maybe(message),
+            ))
+        };
+        let command = |label: String, name: &'static str| {
+            item(
+                label,
+                nib::toolbar_command(self.state(), name)
+                    .is_some()
+                    .then_some(Message::Command(name)),
+            )
+        };
+        let has_selection = !self.state().selection().is_empty();
+
+        vec![
+            item(fl!("cut"), has_selection.then_some(Message::Clipboard("cut"))),
+            item(fl!("copy"), has_selection.then_some(Message::Clipboard("copy"))),
+            item(fl!("paste"), Some(Message::Clipboard("paste"))),
+            item(fl!("select-all"), Some(Message::Command("select_all"))),
+            command(fl!("bold"), "bold"),
+            command(fl!("italic"), "italic"),
+            command(fl!("code"), "code"),
+            command(fl!("quote"), "quote"),
+            command(fl!("bullet-list"), "bullet_list"),
+        ]
     }
 
     /// The find and replace bar.

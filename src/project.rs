@@ -208,7 +208,10 @@ fn git_status(root: &Path) -> BTreeMap<PathBuf, Status> {
     let Ok(output) = Command::new("git")
         .arg("-C")
         .arg(root)
-        .args(["status", "--porcelain", "-z", "--untracked-files=normal"])
+        // `all` rather than `normal`: the default collapses an untracked
+        // folder to one entry, and a tree that marks the folder but not the
+        // file in it is a tree that points at the wrong thing.
+        .args(["status", "--porcelain", "-z", "--untracked-files=all"])
         .output()
     else {
         return BTreeMap::new();

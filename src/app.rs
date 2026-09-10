@@ -105,6 +105,13 @@ pub enum Message {
 
     SetLineNumbers(bool),
     SetWrapCode(bool),
+
+    /// A clipboard action from the menu. The widget handles the shortcuts.
+    Clipboard(&'static str),
+    /// What the system clipboard held, on the way to being pasted.
+    Pasted(Option<String>),
+    /// Show or hide the right-click menu.
+    ShowContextMenu(bool),
 }
 
 /// What is waiting on the unsaved-changes question.
@@ -191,6 +198,8 @@ pub struct App {
     pending: Option<Pending>,
     /// What to carry on with once a save the user asked for completes.
     after_save: Option<Pending>,
+    /// Whether the right-click menu is showing.
+    context_menu_open: bool,
 }
 
 impl App {
@@ -501,6 +510,7 @@ impl cosmic::Application for App {
             context: None,
             pending: None,
             after_save: None,
+            context_menu_open: false,
         };
         app.refresh();
 
@@ -729,6 +739,46 @@ impl cosmic::Application for App {
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Edit(Action::Edit(tr)) => self.apply(*tr),
+            Message::Edit(Action::Context { .. }) => self.context_menu_open = true,
+            Message::ShowContextMenu(open) => self.context_menu_open = open,
+            Message::Clipboard(what) => {
+                self.context_menu_open = false;
+                let state = self.doc().state.clone();
+                let selection = state.selection();
+                match what {
+                    "copy" | "cut" if !selection.is_empty() => {
+                        // The same text the widget's own Ctrl+C writes: the
+                        // engine's function, not a second reading of what a
+                        // selection looks like.
+                        let slice = selection.content(state.doc());
+                        let text = nib::plain_text(&state, &slice);
+                        if what == "cut" {
+                            let mut tr = state.tr().now();
+                            if tr.delete_selection().is_ok() {
+                                self.apply(tr.clone());
+                            }
+                        }
+                        return cosmic::iced::clipboard::write(text)
+                            .map(cosmic::Action::App);
+                    }
+                    "paste" => {
+                        return cosmic::iced::clipboard::read()
+                            .map(|text| cosmic::Action::App(Message::Pasted(text)));
+                    }
+                    _ => {}
+                }
+            }
+            Message::Pasted(text) => {
+                let Some(text) = text.filter(|t| !t.is_empty()) else {
+                    return Task::none();
+                };
+                let state = self.doc().state.clone();
+                let slice = nib::parse_plain(&state, &text);
+                let mut tr = state.tr().now();
+                if tr.replace_selection(slice).is_ok() {
+                    self.apply(tr.clone());
+                }
+            }
             Message::Edit(Action::Link(href)) => {
                 // Opening a link is the desktop's business, not this
                 // application's; `open` hands it to the portal.
@@ -1130,6 +1180,11 @@ impl cosmic::Application for App {
             widget::scrollable(widget::container(column).center_x(Length::Fill))
                 .width(Length::Fill)
                 .height(Length::Fill),
+        )
+        .height(Length::Fill);
+        let page = widget::context_menu(
+            page,
+            self.context_menu_open.then(|| self.context_menu()),
         );
 
         let mut screen = widget::column::with_capacity(6);
@@ -1148,7 +1203,7 @@ impl cosmic::Application for App {
             screen = screen.push(Self::error_bar(error));
         }
         screen
-            .push(page.height(Length::Fill))
+            .push(page)
             .push(self.status_bar())
             .spacing(spacing.space_none)
             .into()

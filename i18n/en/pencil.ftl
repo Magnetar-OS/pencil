@@ -99,3 +99,10 @@ close-folder = Close folder
 project = Files
 line-numbers = Line numbers in code
 wrap-code = Wrap long code lines
+
+# Context menu
+copy = Copy
+cut = Cut
+paste = Paste
+select-all = Select all
+link = Link…
