@@ -174,6 +174,8 @@ pub struct Config {
     /// a reader wants, so it is a setting rather than a decision.
     pub wrap_code: bool,
     /// Whether prose is spell checked.
+    /// Modal editing: every key goes to the Vim state machine first.
+    pub vim: bool,
     pub spell_check: bool,
     /// Which dictionary, as a Hunspell language tag such as `en_US`.
     ///
@@ -197,6 +199,7 @@ impl Default for Config {
             recent: Vec::new(),
             line_numbers: false,
             wrap_code: true,
+            vim: false,
             spell_check: true,
             spell_language: String::new(),
             learnt_words: Vec::new(),

@@ -5,7 +5,8 @@
 use std::fs;
 use std::path::PathBuf;
 
-use pencil::project::{Project, Status};
+use nib_model::search::{Matching, Query};
+use pencil::project::{self, Project, Status};
 
 /// A temporary folder with a few things in it.
 struct Scratch(PathBuf);
@@ -157,4 +158,90 @@ fn each_status_has_a_marker_and_clean_has_none() {
     assert!(!Status::Staged.marker().is_empty());
     assert!(!Status::Untracked.marker().is_empty());
     assert!(Status::Clean.marker().is_empty());
+}
+
+// -- searching the folder --------------------------------------------------
+
+/// A folder with a few documents to find things in.
+///
+/// Named per test: the tests run at once, and `Scratch` is a fixed path.
+fn searchable(name: &str) -> Scratch {
+    let scratch = Scratch::new(name);
+    scratch.file("one.md", "# Title\nthe needle is here\nand nothing else\n");
+    scratch.file("two.md", "no match at all\n");
+    scratch.file("three.txt", "needle again\nand a second needle\n");
+    scratch.file("picture.png", "needle but not a document");
+    scratch.file(".git/config", "needle in a skipped folder");
+    scratch
+}
+
+fn query(text: &str, matching: Matching) -> Query {
+    Query::new(text, matching).expect("a valid query")
+}
+
+#[test]
+fn a_search_finds_every_match_with_its_line() {
+    let scratch = searchable("search-lines");
+    let hits = project::search(&scratch.0, &query("needle", Matching::Loose));
+    assert_eq!(hits.len(), 3, "one in one.md, two in three.txt");
+    let first = hits.iter().find(|h| h.path.ends_with("one.md")).unwrap();
+    assert_eq!(first.line, 2);
+    assert_eq!(first.text, "the needle is here");
+}
+
+#[test]
+fn matches_are_numbered_within_their_own_file() {
+    let scratch = searchable("search-ordinals");
+    let hits = project::search(&scratch.0, &query("needle", Matching::Loose));
+    let three: Vec<usize> = hits
+        .iter()
+        .filter(|h| h.path.ends_with("three.txt"))
+        .map(|h| h.ordinal)
+        .collect();
+    assert_eq!(three, vec![0, 1], "each file counts from zero again");
+}
+
+#[test]
+fn a_search_only_reads_documents() {
+    let scratch = searchable("search-documents");
+    let hits = project::search(&scratch.0, &query("needle", Matching::Loose));
+    assert!(
+        hits.iter().all(|h| !h.path.ends_with("picture.png")),
+        "a png is not a document"
+    );
+}
+
+#[test]
+fn a_search_stays_out_of_dot_folders() {
+    let scratch = searchable("search-hidden");
+    let hits = project::search(&scratch.0, &query("needle", Matching::Loose));
+    assert!(
+        hits.iter()
+            .all(|h| !h.path.to_string_lossy().contains(".git")),
+        "nothing under .git"
+    );
+}
+
+#[test]
+fn a_search_matches_the_way_the_find_bar_does() {
+    let scratch = searchable("search-matching");
+    assert_eq!(
+        project::search(&scratch.0, &query("Needle", Matching::Loose)).len(),
+        3,
+        "loose ignores case"
+    );
+    assert_eq!(
+        project::search(&scratch.0, &query("Needle", Matching::CaseSensitive)).len(),
+        0
+    );
+}
+
+#[test]
+fn results_come_back_in_path_then_line_order() {
+    let scratch = searchable("search-order");
+    let hits = project::search(&scratch.0, &query("needle", Matching::Loose));
+    let ordered: Vec<_> = hits.iter().map(|h| (h.path.clone(), h.line)).collect();
+    let mut sorted = ordered.clone();
+    sorted.sort();
+    assert_eq!(ordered, sorted);
 }

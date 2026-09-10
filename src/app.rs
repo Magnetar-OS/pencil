@@ -33,7 +33,7 @@ use nib_model::{Transaction, basic, commands};
 
 use crate::config::{Appearance, CaretShape, Config};
 use crate::document::{Converters, Document, Format};
-use crate::project::Project;
+use crate::project::{self, Project};
 use crate::fl;
 
 /// The application's unique identifier.
@@ -49,10 +49,14 @@ pub enum Message {
     Block(&'static str, i64),
 
     New,
+    /// A second window, which is a second process. See the handler.
+    NewWindow,
     Open,
     Opened(PathBuf, Format, String),
     Save,
     SaveAs,
+    /// Hand the document to the desktop's print dialog.
+    Print,
     SaveTo(PathBuf, Format),
     Saved(PathBuf),
     Failed(String),
@@ -69,6 +73,13 @@ pub enum Message {
 
     ToggleOutline,
     GoToHeading(usize),
+
+    /// Search the open folder for what the find bar holds.
+    FindInProject,
+    /// What that search found.
+    ProjectSearched(Vec<project::Hit>),
+    /// Open the file a result points at, at the match.
+    GoToResult(usize),
 
     OpenContext(ContextPage),
     CloseContext,
@@ -106,6 +117,7 @@ pub enum Message {
 
     SetLineNumbers(bool),
     SetWrapCode(bool),
+    SetVim(bool),
     SetSpellCheck(bool),
     SetSpellLanguage(String),
     /// Replace the misspelling under the caret with a suggestion.
@@ -117,6 +129,9 @@ pub enum Message {
     Clipboard(&'static str),
     /// What the system clipboard held, on the way to being pasted.
     Pasted(Option<String>),
+
+    /// Nothing to do. What a task returns when its work was the point.
+    Ignore,
 }
 
 /// What is waiting on the unsaved-changes question.
@@ -169,6 +184,22 @@ pub enum Sidebar {
     Outline,
     /// The open folder.
     Project,
+    /// What the last folder-wide search found.
+    Results,
+}
+
+/// What a folder-wide search found, and what it was looking for.
+///
+/// The query is kept because opening a result searches the parsed document
+/// again: the file said which line, and the document says which position.
+pub(crate) struct Results {
+    pub(crate) query: String,
+    pub(crate) matching: Matching,
+    pub(crate) hits: Vec<project::Hit>,
+    /// Whether the search stopped at [`project::SEARCH_LIMIT`].
+    pub(crate) truncated: bool,
+    /// Set while the search is running, so the sidebar can say so.
+    pub(crate) running: bool,
 }
 
 /// What a sidebar row points at.
@@ -176,6 +207,7 @@ pub enum Sidebar {
 enum NavTarget {
     Heading(usize),
     Entry(usize),
+    Result(usize),
 }
 
 pub struct App {
@@ -197,6 +229,11 @@ pub struct App {
 
     project: Option<Project>,
     sidebar: Sidebar,
+    /// The last folder-wide search.
+    results: Option<Results>,
+    /// A result waiting for its file to finish opening: the path, and which
+    /// match in it to land on.
+    jump: Option<(PathBuf, usize)>,
 
     find: Option<Find>,
     nav: nav_bar::Model,
@@ -206,6 +243,9 @@ pub struct App {
     pending: Option<Pending>,
     /// What to carry on with once a save the user asked for completes.
     after_save: Option<Pending>,
+    /// The Vim mode, for the status bar. The widget owns the state machine;
+    /// this is the last thing it said.
+    mode: nib_model::vim::Mode,
 }
 
 impl App {
@@ -371,11 +411,18 @@ impl App {
                 .enumerate()
                 .map(|(i, h)| (i, h.text.clone(), h.level))
                 .collect(),
-            Sidebar::Project => Vec::new(),
+            Sidebar::Project | Sidebar::Results => Vec::new(),
         };
-        if self.sidebar == Sidebar::Project {
-            self.rebuild_project_nav();
-            return;
+        match self.sidebar {
+            Sidebar::Project => {
+                self.rebuild_project_nav();
+                return;
+            }
+            Sidebar::Results => {
+                self.rebuild_results_nav();
+                return;
+            }
+            Sidebar::Outline => {}
         }
         for (index, text, level) in rows {
             let heading = Heading {
@@ -427,6 +474,56 @@ impl App {
         }
     }
 
+    /// The sidebar, showing what the last folder-wide search found.
+    ///
+    /// A file's name once, then its matching lines under it: a list that
+    /// repeats the path on every row is a list whose rows are all path.
+    fn rebuild_results_nav(&mut self) {
+        let Some(results) = &self.results else {
+            return;
+        };
+        if results.running {
+            self.nav.insert().text(fl!("searching"));
+            return;
+        }
+        let root = self.project.as_ref().map(|p| p.root().to_path_buf());
+        let mut rows: Vec<(Option<String>, String, usize)> = Vec::new();
+        let mut last: Option<PathBuf> = None;
+        for (index, hit) in results.hits.iter().enumerate() {
+            let heading = (last.as_deref() != Some(hit.path.as_path())).then(|| {
+                let shown = root
+                    .as_deref()
+                    .and_then(|root| hit.path.strip_prefix(root).ok())
+                    .unwrap_or(hit.path.as_path());
+                shown.display().to_string()
+            });
+            last = Some(hit.path.clone());
+            let text = if hit.text.len() > 80 {
+                let cut = hit.text.char_indices().nth(80).map_or(hit.text.len(), |(i, _)| i);
+                format!("{}\u{2026}", &hit.text[..cut])
+            } else {
+                hit.text.clone()
+            };
+            rows.push((heading, format!("  {}: {text}", hit.line), index));
+        }
+
+        if rows.is_empty() {
+            self.nav.insert().text(fl!("no-matches"));
+            return;
+        }
+        for (heading, text, index) in rows {
+            if let Some(heading) = heading {
+                self.nav.insert().text(heading);
+            }
+            self.nav.insert().text(text).data(NavTarget::Result(index));
+        }
+        if results.truncated {
+            self.nav
+                .insert()
+                .text(fl!("results-truncated", total = project::SEARCH_LIMIT));
+        }
+    }
+
     /// Opens a file, reusing the tab when the one showing is empty and
     /// untouched — a new window should not leave a blank tab behind.
     fn load(&mut self, path: PathBuf, format: Format, source: &str) {
@@ -445,6 +542,34 @@ impl App {
             self.add_tab(document);
             self.retitle();
         }
+    }
+
+    /// Selects the `ordinal`th match of the find bar's query in the active
+    /// document.
+    ///
+    /// The folder search counted matches in the file's *source*; this counts
+    /// them in the document that source parsed into. For plain text the two
+    /// agree exactly. For Markdown a query that matches syntax the document
+    /// does not carry — `**`, say — will not line up, and landing on the
+    /// first match is the right answer then.
+    fn land_on(&mut self, ordinal: usize) {
+        let Some(find) = &self.find else {
+            return;
+        };
+        let Ok(query) = Query::new(&find.query, find.matching) else {
+            return;
+        };
+        let hits = search::find(self.doc().state.doc(), &query);
+        let Some(hit) = hits.get(ordinal).or_else(|| hits.first()).copied() else {
+            return;
+        };
+        let index = hits.iter().position(|h| *h == hit);
+        if let Some(find) = &mut self.find {
+            find.hits = hits;
+            find.current = index;
+        }
+        let tr = search::select(&self.doc().state, hit);
+        self.apply(tr);
     }
 
     fn save_to(&self, path: PathBuf, format: Format) -> Task<Message> {
@@ -535,18 +660,26 @@ impl cosmic::Application for App {
             schema,
             project: None,
             sidebar: Sidebar::default(),
+            results: None,
+            jump: None,
             find: None,
             nav: nav_bar::Model::default(),
             error: None,
             context: None,
             pending: None,
             after_save: None,
+            mode: nib_model::vim::Mode::Normal,
         };
         app.reload_speller();
         app.refresh();
 
         let theme = cosmic::command::set_theme(app.config.appearance().theme());
         let task = match flags {
+            // A folder rather than a file: `pencil ~/notes` opens the folder,
+            // which is also how a new window inherits the one it came from.
+            Some(path) if path.is_dir() => {
+                cosmic::task::message(Message::FolderOpened(path))
+            }
             Some(path) => cosmic::task::future(async move {
                 match crate::document::read(path).await {
                     Ok((path, format, source)) => Message::Opened(path, format, source),
@@ -572,7 +705,13 @@ impl cosmic::Application for App {
         };
         vec![
             button("document-new-symbolic", fl!("new"), Message::New),
+            button(
+                "window-new-symbolic",
+                fl!("new-window"),
+                Message::NewWindow,
+            ),
             button("document-open-symbolic", fl!("open"), Message::Open),
+            button("document-print-symbolic", fl!("print"), Message::Print),
             button("document-save-symbolic", fl!("save"), Message::Save),
             button(
                 "document-save-as-symbolic",
@@ -681,6 +820,7 @@ impl cosmic::Application for App {
                     None => open_path(path),
                 }
             }
+            Some(NavTarget::Result(index)) => self.update(Message::GoToResult(index)),
             None => Task::none(),
         }
     }
@@ -758,7 +898,10 @@ impl cosmic::Application for App {
                     "s" if modifiers.shift() => Some(Message::SaveAs),
                     "s" => Some(Message::Save),
                     "o" => Some(Message::Open),
+                    "p" => Some(Message::Print),
+                    "n" if modifiers.shift() => Some(Message::NewWindow),
                     "n" => Some(Message::New),
+                    "f" if modifiers.shift() => Some(Message::FindInProject),
                     "f" => Some(Message::ToggleFind),
                     _ => None,
                 }
@@ -812,10 +955,24 @@ impl cosmic::Application for App {
                 // application's; `open` hands it to the portal.
                 let _ = open::that_detached(&href);
             }
+            Message::Edit(Action::Mode(mode)) => self.mode = mode,
+            // Vim's `/`, `?` and `:` are prompts the widget does not draw, and
+            // `n` and `N` step through what the last one found.
+            Message::Edit(Action::Prompt(what)) => {
+                return match what {
+                    'n' => self.update(Message::FindNext),
+                    'N' => self.update(Message::FindPrevious),
+                    _ if self.find.is_some() => {
+                        widget::text_input::focus(crate::chrome::find_input())
+                    }
+                    _ => self.update(Message::ToggleFind),
+                };
+            }
             // Everything else the widget reports needs nothing from here. A
             // right-click is the notable one: the widget has already moved the
             // caret, and the menu opens itself on the button's release.
-            Message::Edit(_) => {}
+            // ...and a task whose work was the point reports nothing either.
+            Message::Edit(_) | Message::Ignore => {}
 
             Message::Command(name) => {
                 if let Some(tr) = nib::toolbar_command(&self.doc().state, name) {
@@ -859,9 +1016,70 @@ impl cosmic::Application for App {
                     }
                 });
             }
+            Message::Print => {
+                let doc = self.doc().state.doc().clone();
+                let title = self.doc().title();
+                return cosmic::task::future(async move {
+                    // Laying a document out is the same work the window does
+                    // to draw one, so it happens off the thread that draws.
+                    let name = title.clone();
+                    let pdf = tokio::task::spawn_blocking(move || {
+                        crate::print::to_pdf(&doc, &name, crate::print::Sheet::default())
+                    })
+                    .await;
+                    match pdf {
+                        Ok(pdf) => match crate::print::send(pdf, &title).await {
+                            Ok(()) => Message::Ignore,
+                            Err(error) => Message::Failed(error),
+                        },
+                        Err(error) => Message::Failed(error.to_string()),
+                    }
+                });
+            }
+            Message::NewWindow => {
+                // A process, not a window. libcosmic draws the header bar,
+                // the nav bar and the context drawer for the *main* window
+                // only, so a second window inside this process would come up
+                // without any of the chrome that makes it an application.
+                // A second process is a real second window, with its own
+                // documents, its own undo and its own everything.
+                let exe = match std::env::current_exe() {
+                    Ok(exe) => exe,
+                    Err(error) => {
+                        self.error = Some(error.to_string());
+                        return Task::none();
+                    }
+                };
+                // The new window starts where this one is: same folder, empty
+                // document.
+                let folder = self.project.as_ref().map(|p| p.root().to_path_buf());
+                return cosmic::task::future(async move {
+                    let mut command = tokio::process::Command::new(exe);
+                    if let Some(folder) = folder {
+                        command.arg(folder);
+                    }
+                    match command.spawn() {
+                        // Awaited so the child is reaped rather than left a
+                        // zombie for as long as this window lives.
+                        Ok(mut child) => {
+                            let _ = child.wait().await;
+                            Message::Ignore
+                        }
+                        Err(error) => Message::Failed(error.to_string()),
+                    }
+                });
+            }
             Message::Opened(path, format, source) => {
                 self.remember(&path);
+                let jump = self
+                    .jump
+                    .take()
+                    .filter(|(waiting, _)| waiting == &path)
+                    .map(|(_, ordinal)| ordinal);
                 self.load(path, format, &source);
+                if let Some(ordinal) = jump {
+                    self.land_on(ordinal);
+                }
             }
 
             Message::Confirm(pending) => self.pending = Some(pending),
@@ -978,6 +1196,11 @@ impl cosmic::Application for App {
                     None => Some(Find::default()),
                 };
                 self.refresh();
+                // Opening the bar puts the caret in it. Anything else and the
+                // next thing typed lands in the document.
+                if self.find.is_some() {
+                    return widget::text_input::focus(crate::chrome::find_input());
+                }
             }
             Message::FindChanged(query) => {
                 let doc = self
@@ -1173,12 +1396,101 @@ impl cosmic::Application for App {
                 self.rebuild_nav();
             }
 
+            Message::FindInProject => {
+                let Some(root) = self.project.as_ref().map(|p| p.root().to_path_buf()) else {
+                    self.error = Some(fl!("no-folder-open"));
+                    return Task::none();
+                };
+                // Nothing to search for yet: open the bar and wait for one.
+                if self.find.as_ref().is_none_or(|find| find.query.is_empty()) {
+                    if self.find.is_none() {
+                        return self.update(Message::ToggleFind);
+                    }
+                    return widget::text_input::focus(crate::chrome::find_input());
+                }
+                let find = self.find.as_ref().expect("just checked");
+                let (query, matching) = (find.query.clone(), find.matching);
+                let compiled = match Query::new(&query, matching) {
+                    Ok(compiled) => compiled,
+                    Err(error) => {
+                        if let Some(find) = &mut self.find {
+                            find.error = Some(error.to_string());
+                        }
+                        return Task::none();
+                    }
+                };
+                self.results = Some(Results {
+                    query,
+                    matching,
+                    hits: Vec::new(),
+                    truncated: false,
+                    running: true,
+                });
+                self.sidebar = Sidebar::Results;
+                self.config.outline = true;
+                self.rebuild_nav();
+                // Off the UI thread: a folder of any size is a lot of file
+                // reads, and a frozen window is not a search.
+                return cosmic::task::future(async move {
+                    let hits = tokio::task::spawn_blocking(move || {
+                        crate::project::search(&root, &compiled)
+                    })
+                    .await
+                    .unwrap_or_default();
+                    Message::ProjectSearched(hits)
+                });
+            }
+            Message::ProjectSearched(hits) => {
+                if let Some(results) = &mut self.results {
+                    results.truncated = hits.len() >= project::SEARCH_LIMIT;
+                    results.hits = hits;
+                    results.running = false;
+                }
+                self.rebuild_nav();
+            }
+            Message::GoToResult(index) => {
+                let Some(results) = &self.results else {
+                    return Task::none();
+                };
+                let Some(hit) = results.hits.get(index) else {
+                    return Task::none();
+                };
+                let (path, ordinal) = (hit.path.clone(), hit.ordinal);
+                // The find bar takes the folder search's query, so the
+                // document that opens is searched for the same thing.
+                let (query, matching) = (results.query.clone(), results.matching);
+                self.find = Some(Find {
+                    query,
+                    matching,
+                    ..Find::default()
+                });
+
+                let open = self.tabs.iter().find(|id| {
+                    self.tabs
+                        .data::<Document>(*id)
+                        .and_then(|d| d.path.as_deref())
+                        == Some(path.as_path())
+                });
+                let Some(id) = open else {
+                    self.jump = Some((path.clone(), ordinal));
+                    return open_path(path);
+                };
+                let task = self.update(Message::TabActivate(id));
+                self.land_on(ordinal);
+                return task;
+            }
+
             Message::SetLineNumbers(on) => {
                 self.config.line_numbers = on;
                 self.write_config();
             }
             Message::SetWrapCode(on) => {
                 self.config.wrap_code = on;
+                self.write_config();
+            }
+            Message::SetVim(on) => {
+                self.config.vim = on;
+                self.mode = nib_model::vim::Mode::Normal;
                 self.write_config();
             }
             Message::SetSpellCheck(on) => {
@@ -1235,6 +1547,7 @@ impl cosmic::Application for App {
             .keymap(&self.keymap)
             .input_rules(&self.rules)
             .style(self.style())
+            .vim(self.config.vim)
             .autofocus()
             .on_action(Message::Edit);
 
@@ -1270,7 +1583,7 @@ impl cosmic::Application for App {
         }
         screen = screen.push(self.toolbar());
         if let Some(find) = &self.find {
-            screen = screen.push(Self::find_bar(find));
+            screen = screen.push(Self::find_bar(find, self.project.is_some()));
         }
         if let Some(error) = &self.error {
             screen = screen.push(Self::error_bar(error));
@@ -1308,6 +1621,15 @@ impl App {
 
     pub(crate) fn format(&self) -> Format {
         self.doc().format
+    }
+
+    pub(crate) fn vim_enabled(&self) -> bool {
+        self.config.vim
+    }
+
+    /// What the status bar shows: the mode, and any half-typed command.
+    pub(crate) fn mode_label(&self) -> String {
+        self.mode.label().to_owned()
     }
 
     pub(crate) fn is_dirty(&self) -> bool {

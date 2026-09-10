@@ -21,6 +21,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use nib_model::search::Query;
+
 /// What git says about a file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
@@ -251,4 +253,95 @@ fn git_status(root: &Path) -> BTreeMap<PathBuf, Status> {
         }
     }
     statuses
+}
+
+/// One match, somewhere under the folder.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hit {
+    pub path: PathBuf,
+    /// Counting from one, the way an editor counts.
+    pub line: usize,
+    /// The whole line the match is on, trimmed for display.
+    pub text: String,
+    /// Which match this is within its own file, counting from zero.
+    ///
+    /// The document the file parses into is searched again when the file
+    /// opens, and this says which of *those* hits to land on — the fifth match
+    /// in the file is the fifth match in the document.
+    pub ordinal: usize,
+}
+
+/// How many matches are worth collecting before stopping.
+///
+/// A sidebar nobody can scroll to the end of is a sidebar that only cost time
+/// to build. The count is shown, so a truncated search says so.
+pub const SEARCH_LIMIT: usize = 500;
+
+/// Every match for `query` in the files under `root`.
+///
+/// Blocking, and meant to be run off the UI thread. Files that are not UTF-8
+/// are skipped rather than reported: a folder of documents may well contain a
+/// PNG, and that is not an error the user needs telling about.
+#[must_use]
+pub fn search(root: &Path, query: &Query) -> Vec<Hit> {
+    let mut hits = Vec::new();
+    let mut folders = vec![root.to_path_buf()];
+
+    while let Some(folder) = folders.pop() {
+        if hits.len() >= SEARCH_LIMIT {
+            break;
+        }
+        let Ok(dir) = std::fs::read_dir(&folder) else {
+            continue;
+        };
+        let mut files = Vec::new();
+        for entry in dir.flatten() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') || SKIP.contains(&name.as_str()) {
+                continue;
+            }
+            if entry.file_type().is_ok_and(|t| t.is_dir()) {
+                folders.push(path);
+            } else if path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(str::to_ascii_lowercase)
+                .is_some_and(|e| OPENABLE.contains(&e.as_str()))
+            {
+                files.push(path);
+            }
+        }
+        // In name order, so the same folder searched twice reads the same.
+        files.sort();
+        for path in files {
+            search_file(&path, query, &mut hits);
+            if hits.len() >= SEARCH_LIMIT {
+                break;
+            }
+        }
+    }
+    hits.sort_by(|a, b| a.path.cmp(&b.path).then(a.line.cmp(&b.line)));
+    hits
+}
+
+fn search_file(path: &Path, query: &Query, hits: &mut Vec<Hit>) {
+    let Ok(source) = std::fs::read_to_string(path) else {
+        return;
+    };
+    let mut ordinal = 0;
+    for (index, line) in source.lines().enumerate() {
+        for _ in query.matches(line) {
+            hits.push(Hit {
+                path: path.to_path_buf(),
+                line: index + 1,
+                text: line.trim().to_owned(),
+                ordinal,
+            });
+            ordinal += 1;
+            if hits.len() >= SEARCH_LIMIT {
+                return;
+            }
+        }
+    }
 }

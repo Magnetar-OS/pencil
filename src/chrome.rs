@@ -180,7 +180,7 @@ impl App {
     }
 
     /// The find and replace bar.
-    pub(crate) fn find_bar(find: &Find) -> Element<'_, Message> {
+    pub(crate) fn find_bar(find: &Find, project: bool) -> Element<'_, Message> {
         let spacing = cosmic::theme::spacing();
         let count = if find.query.is_empty() {
             String::new()
@@ -204,6 +204,7 @@ impl App {
             .padding(spacing.space_xxs)
             .push(
                 widget::text_input(fl!("find"), &find.query)
+                    .id(find_input())
                     .on_input(Message::FindChanged)
                     .on_submit(|_| Message::FindNext)
                     .width(Length::FillPortion(2)),
@@ -220,6 +221,18 @@ impl App {
             .push(
                 widget::button::icon(widget::icon::from_name("go-down-symbolic").size(16))
                     .on_press(Message::FindNext),
+            )
+            .push(
+                widget::tooltip(
+                    widget::button::icon(
+                        widget::icon::from_name("folder-saved-search-symbolic").size(16),
+                    )
+                    // Greyed rather than hidden: a button that appears when a
+                    // folder opens is a button nobody knows is there.
+                    .on_press_maybe(project.then_some(Message::FindInProject)),
+                    widget::text::caption(fl!("find-in-project")),
+                    widget::tooltip::Position::Bottom,
+                ),
             )
             .push(widget::text::caption(count).width(Length::Shrink))
             .push(
@@ -238,6 +251,18 @@ impl App {
             row = row.push(widget::text::caption(error.clone()));
         }
         widget::container(row).into()
+    }
+
+    /// The Vim mode, and any half-typed command, for the status bar.
+    ///
+    /// Only when modal editing is on: a status bar that says NORMAL to someone
+    /// who never asked for modes is a status bar telling them something is
+    /// wrong.
+    fn vim_mode(&self) -> Option<Element<'_, Message>> {
+        if !self.vim_enabled() {
+            return None;
+        }
+        Some(widget::text::caption(format!("-- {} --", self.mode_label())).into())
     }
 
     /// The bar an error appears in.
@@ -276,6 +301,7 @@ impl App {
                 .align_y(Alignment::Center)
                 .spacing(spacing.space_s)
                 .push(widget::text::caption(format!("{modified}{name}")))
+                .push_maybe(self.vim_mode())
                 .push(widget::text::caption(if self.format().lossless() {
                     self.format().to_string()
                 } else {
@@ -300,6 +326,7 @@ impl App {
     }
 
     /// The settings pane.
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn settings_page(&self) -> Element<'_, Message> {
         let config = self.config();
         let spacing = cosmic::theme::spacing();
@@ -384,6 +411,13 @@ impl App {
                 .add(widget::settings::item(
                     fl!("wrap-code"),
                     widget::toggler(config.wrap_code).on_toggle(Message::SetWrapCode),
+                ))
+                .into(),
+            widget::settings::section()
+                .title(fl!("keys"))
+                .add(widget::settings::item(
+                    fl!("vim-bindings"),
+                    widget::toggler(config.vim).on_toggle(Message::SetVim),
                 ))
                 .into(),
             widget::settings::section()
@@ -478,7 +512,17 @@ impl App {
     /// Every binding, read out of the keymap rather than written down twice.
     pub(crate) fn shortcuts_page(&self) -> Element<'_, Message> {
         let spacing = cosmic::theme::spacing();
-        let mut section = widget::settings::section().title(fl!("shortcuts"));
+        // The application's own keys are not in the editor's keymap: the
+        // keymap makes transactions, and opening a print dialog is not one.
+        let mut app = widget::settings::section().title(fl!("application"));
+        for (keys, what) in APPLICATION_SHORTCUTS {
+            app = app.add(widget::settings::item(
+                (*keys).to_owned(),
+                widget::text::caption(crate::i18n::translate(what)),
+            ));
+        }
+
+        let mut section = widget::settings::section().title(fl!("editing"));
         for binding in self.keymap().bindings() {
             section = section.add(widget::settings::item(
                 describe_binding(binding),
@@ -487,6 +531,7 @@ impl App {
         }
         widget::settings::view_column(vec![
             widget::text::body(fl!("shortcuts-note")).into(),
+            app.into(),
             section.into(),
         ])
         .spacing(spacing.space_m)
@@ -571,4 +616,30 @@ fn describe_binding(binding: &nib_model::keymap::Binding) -> String {
         Key::Named(name) => (*name).to_owned(),
     });
     parts.join("+")
+}
+
+/// The keys the application handles itself, and what they do.
+const APPLICATION_SHORTCUTS: &[(&str, &str)] = &[
+    ("Ctrl + N", "new"),
+    ("Ctrl + Shift + N", "new-window"),
+    ("Ctrl + O", "open"),
+    ("Ctrl + S", "save"),
+    ("Ctrl + Shift + S", "save-as"),
+    ("Ctrl + P", "print"),
+    ("Ctrl + F", "find"),
+    ("Ctrl + Shift + F", "find-in-project"),
+    ("Ctrl + +", "zoom-in"),
+    ("Ctrl + -", "zoom-out"),
+    ("Ctrl + 0", "zoom-reset"),
+];
+
+/// The find bar's text field.
+///
+/// A stable id so opening the bar can put the caret in it. Without one the
+/// bar appears and the next thing typed goes into the document, which is not
+/// what pressing Find asked for.
+pub(crate) fn find_input() -> cosmic::widget::Id {
+    static ID: std::sync::LazyLock<cosmic::widget::Id> =
+        std::sync::LazyLock::new(cosmic::widget::Id::unique);
+    ID.clone()
 }

@@ -38,6 +38,16 @@ pub static LANGUAGE_LOADER: LazyLock<FluentLanguageLoader> = LazyLock::new(|| {
     loader
 });
 
+/// A string looked up by an id that is not known until run time.
+///
+/// [`fl!`] needs a literal, which is right for nearly everything written by
+/// hand. A table of shortcuts is the exception: the table is data, and its
+/// rows name their strings.
+#[must_use]
+pub fn translate(id: &str) -> String {
+    LANGUAGE_LOADER.get(id)
+}
+
 /// Request a localized string by ID from the i18n/ directory.
 #[macro_export]
 macro_rules! fl {
