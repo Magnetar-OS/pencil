@@ -20,6 +20,7 @@ nib-html = { path = "../cosmic-ext-nib/crates/nib-html", package = "cosmic-ext-n
 nib-markdown = { path = "../cosmic-ext-nib/crates/nib-markdown", package = "cosmic-ext-nib-markdown" }
 nib-text = { path = "../cosmic-ext-nib/crates/nib-text", package = "cosmic-ext-nib-text" }
 nib-highlight = { path = "../cosmic-ext-nib/crates/nib-highlight", package = "cosmic-ext-nib-highlight" }
+nib-spell = { path = "../cosmic-ext-nib/crates/nib-spell", package = "cosmic-ext-nib-spell" }
 
 i18n-embed = { version = "0.16", features = ["fluent-system", "desktop-requester"] }
 i18n-embed-fl = "0.10"

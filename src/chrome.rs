@@ -146,7 +146,26 @@ impl App {
         };
         let has_selection = !self.state().selection().is_empty();
 
-        vec![
+        // A misspelling under the caret puts its corrections at the top, where
+        // a right-click on a squiggle expects to find them.
+        let mut items = Vec::new();
+        if let Some(speller) = self.speller()
+            && let Some((word, from, to)) =
+                speller.word_at(self.state().doc(), self.state().selection().head())
+        {
+            for suggestion in speller.suggest(&word).into_iter().take(5) {
+                items.push(item(
+                    suggestion.clone(),
+                    Some(Message::Correct(from, to, suggestion)),
+                ));
+            }
+            items.push(item(
+                fl!("add-to-dictionary"),
+                Some(Message::Learn(word)),
+            ));
+        }
+
+        items.extend([
             item(fl!("cut"), has_selection.then_some(Message::Clipboard("cut"))),
             item(fl!("copy"), has_selection.then_some(Message::Clipboard("copy"))),
             item(fl!("paste"), Some(Message::Clipboard("paste"))),
@@ -156,7 +175,8 @@ impl App {
             command(fl!("code"), "code"),
             command(fl!("quote"), "quote"),
             command(fl!("bullet-list"), "bullet_list"),
-        ]
+        ]);
+        items
     }
 
     /// The find and replace bar.
@@ -348,6 +368,14 @@ impl App {
                 ))
                 .into(),
             widget::settings::section()
+                .title(fl!("spelling"))
+                .add(widget::settings::item(
+                    fl!("spell-check"),
+                    widget::toggler(config.spell_check).on_toggle(Message::SetSpellCheck),
+                ))
+                .add(self.dictionary_setting())
+                .into(),
+            widget::settings::section()
                 .title(fl!("code"))
                 .add(widget::settings::item(
                     fl!("line-numbers"),
@@ -475,6 +503,31 @@ impl App {
         ])
         .spacing(spacing.space_xs)
         .into()
+    }
+
+    /// Which dictionary, chosen from what is installed.
+    ///
+    /// A list rather than a text field: a field that silently does nothing
+    /// when the tag is wrong is worse than no field.
+    fn dictionary_setting(&self) -> widget::Row<'_, Message, cosmic::Theme> {
+        let installed = nib_spell::Speller::installed();
+        if installed.is_empty() {
+            return widget::settings::item(
+                fl!("spell-language"),
+                widget::text::caption(fl!("spell-none")),
+            );
+        }
+        let chosen = self.config().dictionary();
+        let selected = installed.iter().position(|l| *l == chosen);
+        let labels = installed.clone();
+        widget::settings::item(
+            fl!("spell-language"),
+            widget::dropdown(labels, selected, move |index| {
+                Message::SetSpellLanguage(
+                    installed.get(index).cloned().unwrap_or_default(),
+                )
+            }),
+        )
     }
 
     fn caret_labels() -> Vec<String> {

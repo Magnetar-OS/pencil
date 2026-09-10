@@ -173,6 +173,15 @@ pub struct Config {
     /// Whether code blocks wrap. Off is what a programmer wants and on is what
     /// a reader wants, so it is a setting rather than a decision.
     pub wrap_code: bool,
+    /// Whether prose is spell checked.
+    pub spell_check: bool,
+    /// Which dictionary, as a Hunspell language tag such as `en_US`.
+    ///
+    /// Empty means "whatever the desktop's language is", resolved on startup.
+    pub spell_language: String,
+    /// Words the user has taught it, kept with the settings so they survive a
+    /// document being closed.
+    pub learnt_words: Vec<String>,
 }
 
 impl Default for Config {
@@ -188,6 +197,9 @@ impl Default for Config {
             recent: Vec::new(),
             line_numbers: false,
             wrap_code: true,
+            spell_check: true,
+            spell_language: String::new(),
+            learnt_words: Vec::new(),
         }
     }
 }
@@ -219,6 +231,21 @@ impl Config {
         self.recent.retain(|p| *p != path);
         self.recent.insert(0, path);
         self.recent.truncate(RECENT_LIMIT);
+    }
+
+    /// The dictionary to load: the setting, or the desktop's language, or
+    /// American English as the last resort every distribution packages.
+    #[must_use]
+    pub fn dictionary(&self) -> String {
+        if !self.spell_language.is_empty() {
+            return self.spell_language.clone();
+        }
+        // `en_GB.UTF-8` and `en_GB` both name the same dictionary.
+        let from_locale = std::env::var("LANG")
+            .ok()
+            .and_then(|lang| lang.split('.').next().map(str::to_owned))
+            .filter(|lang| lang.contains('_'));
+        from_locale.unwrap_or_else(|| "en_US".to_owned())
     }
 
     /// The remembered files that are still there.

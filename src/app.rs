@@ -22,6 +22,7 @@ use cosmic::widget::{self, nav_bar, segmented_button, tab_bar};
 
 use nib::{Action, editor};
 use nib_highlight::Highlighter;
+use nib_spell::Speller;
 use nib_model::decoration::DecorationSet;
 use nib_model::input_rules::{self, InputRule};
 use nib_model::keymap::Keymap;
@@ -105,6 +106,12 @@ pub enum Message {
 
     SetLineNumbers(bool),
     SetWrapCode(bool),
+    SetSpellCheck(bool),
+    SetSpellLanguage(String),
+    /// Replace the misspelling under the caret with a suggestion.
+    Correct(usize, usize, String),
+    /// Teach the dictionary the word under the caret.
+    Learn(String),
 
     /// A clipboard action from the menu. The widget handles the shortcuts.
     Clipboard(&'static str),
@@ -181,6 +188,9 @@ pub struct App {
     rules: Vec<InputRule>,
     converters: Converters,
     highlighter: Highlighter,
+    /// The spell checker, when a dictionary for the chosen language is
+    /// installed. `None` is the normal off state, not a fault.
+    speller: Option<Speller>,
 
     /// The open documents. Each tab holds one as its data.
     tabs: segmented_button::SingleSelectModel,
@@ -313,8 +323,32 @@ impl App {
         self.doc_mut().decorations = decorations;
     }
 
+    /// Loads the dictionary the settings ask for, and teaches it what the
+    /// user has taught it before.
+    fn reload_speller(&mut self) {
+        if !self.config.spell_check {
+            self.speller = None;
+            return;
+        }
+        let language = self.config.dictionary();
+        self.speller = match Speller::system(&language) {
+            Ok(mut speller) => {
+                for word in &self.config.learnt_words {
+                    speller.learn(word);
+                }
+                Some(speller)
+            }
+            // No dictionary installed is the normal off state: no squiggles,
+            // and a settings pane that says which package would turn it on.
+            Err(_) => None,
+        };
+    }
+
     fn build_decorations(&self) -> DecorationSet {
         let mut all = self.highlighter.decorate(self.doc().state.doc());
+        if let Some(speller) = &self.speller {
+            all = all.with(speller.decorate(self.doc().state.doc()).all().to_vec());
+        }
         if let Some(find) = &self.find
             && !find.hits.is_empty()
         {
@@ -496,6 +530,7 @@ impl cosmic::Application for App {
             rules: input_rules::base(&schema),
             converters: Converters::new(&schema),
             highlighter: Highlighter::new(),
+            speller: None,
             tabs,
             schema,
             project: None,
@@ -507,6 +542,7 @@ impl cosmic::Application for App {
             pending: None,
             after_save: None,
         };
+        app.reload_speller();
         app.refresh();
 
         let theme = cosmic::command::set_theme(app.config.appearance().theme());
@@ -1145,6 +1181,48 @@ impl cosmic::Application for App {
                 self.config.wrap_code = on;
                 self.write_config();
             }
+            Message::SetSpellCheck(on) => {
+                self.config.spell_check = on;
+                self.write_config();
+                self.reload_speller();
+                self.refresh();
+            }
+            Message::SetSpellLanguage(language) => {
+                self.config.spell_language = language;
+                self.write_config();
+                self.reload_speller();
+                self.refresh();
+            }
+            Message::Correct(from, to, replacement) => {
+                let state = self.doc().state.clone();
+                let marks = state.doc().resolve(from).marks();
+                let node = state.schema().text(replacement.as_str(), marks);
+                let mut tr = state.tr().now();
+                if tr
+                    .replace(
+                        from,
+                        to,
+                        nib_model::slice::Slice::new(
+                            nib_model::fragment::Fragment::from(node),
+                            0,
+                            0,
+                        ),
+                    )
+                    .is_ok()
+                {
+                    self.apply(tr.clone());
+                }
+            }
+            Message::Learn(word) => {
+                if let Some(speller) = &mut self.speller {
+                    speller.learn(&word);
+                }
+                if !self.config.learnt_words.contains(&word) {
+                    self.config.learnt_words.push(word);
+                    self.write_config();
+                }
+                self.refresh();
+            }
         }
         Task::none()
     }
@@ -1234,6 +1312,10 @@ impl App {
 
     pub(crate) fn is_dirty(&self) -> bool {
         self.doc().dirty
+    }
+
+    pub(crate) fn speller(&self) -> Option<&Speller> {
+        self.speller.as_ref()
     }
 
     /// Whether a mark is on where the caret is, so its button can be shown

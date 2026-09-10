@@ -106,3 +106,11 @@ cut = Cut
 paste = Paste
 select-all = Select all
 link = Link…
+
+# Spelling
+spelling = Spelling
+spell-check = Check spelling
+spell-language = Dictionary
+spell-none = No dictionaries installed
+spell-install = Install a hunspell dictionary for your language to turn this on.
+add-to-dictionary = Add to dictionary
