@@ -31,6 +31,9 @@
 
   <launchable type="desktop-id">com.magnetaros.Pencil.desktop</launchable>
 
+  <icon type="remote" width="64" height="64" scale="1">
+    https://github.com/Magnetar-OS/pencil/raw/main/resources/icons/hicolor/scalable/apps/com.magnetaros.Pencil.svg
+  </icon>
   <url type="homepage">https://github.com/Magnetar-OS/pencil</url>
   <url type="bugtracker">https://github.com/Magnetar-OS/pencil/issues</url>
 
@@ -39,6 +42,12 @@
   </developer>
 
   <content_rating type="oars-1.1" />
+
+  <!-- The violet of the app icon; software centres tint the page header with it. -->
+  <branding>
+    <color type="primary" scheme_preference="light">#a66bff</color>
+    <color type="primary" scheme_preference="dark">#6432c8</color>
+  </branding>
 
   <categories>
     <category>Office</category>
