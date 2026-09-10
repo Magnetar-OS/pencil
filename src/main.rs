@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use pencil::{APP_ID, app, i18n};
+use pencil::{app, i18n};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The desktop's languages, not the process's locale: a COSMIC session sets
