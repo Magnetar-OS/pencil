@@ -18,7 +18,7 @@ use cosmic::cosmic_config::CosmicConfigEntry as _;
 use cosmic::iced::{Length, Subscription};
 use cosmic::Application as _;
 use cosmic::prelude::*;
-use cosmic::widget::{self, nav_bar};
+use cosmic::widget::{self, nav_bar, segmented_button, tab_bar};
 
 use nib::{Action, editor};
 use nib_highlight::Highlighter;
@@ -28,10 +28,11 @@ use nib_model::keymap::Keymap;
 use nib_model::schema::Schema;
 use nib_model::search::{self, Heading, Matching, Query};
 use nib_model::state::{EditorState, Selection};
-use nib_model::{Transaction, basic, commands, history};
+use nib_model::{Transaction, basic, commands};
 
 use crate::config::{Appearance, CaretShape, Config};
-use crate::document::{Converters, Format};
+use crate::document::{Converters, Document, Format};
+use crate::project::Project;
 use crate::fl;
 
 /// The application's unique identifier.
@@ -93,6 +94,17 @@ pub enum Message {
     SetTheme(Appearance),
     OpenRecent(PathBuf),
     ClearRecent,
+
+    TabActivate(segmented_button::Entity),
+    TabClose(segmented_button::Entity),
+
+    OpenFolder,
+    FolderOpened(PathBuf),
+    CloseFolder,
+    ShowSidebar(Sidebar),
+
+    SetLineNumbers(bool),
+    SetWrapCode(bool),
 }
 
 /// What is waiting on the unsaved-changes question.
@@ -101,6 +113,7 @@ pub enum Pending {
     New,
     Open,
     OpenPath(PathBuf),
+    CloseTab(segmented_button::Entity),
 }
 
 /// The panes that open in the context drawer.
@@ -136,29 +149,41 @@ pub(crate) struct Find {
     pub(crate) error: Option<String>,
 }
 
+/// What the sidebar is showing.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Sidebar {
+    /// The active document's headings.
+    #[default]
+    Outline,
+    /// The open folder.
+    Project,
+}
+
+/// What a sidebar row points at.
+#[derive(Clone, Copy, Debug)]
+enum NavTarget {
+    Heading(usize),
+    Entry(usize),
+}
+
 pub struct App {
     core: Core,
     config: Config,
     config_handler: Option<cosmic::cosmic_config::Config>,
 
     schema: Schema,
-    state: EditorState,
     keymap: Keymap,
     rules: Vec<InputRule>,
     converters: Converters,
     highlighter: Highlighter,
 
-    /// Syntax colours and search hits, recomputed when the document changes.
-    decorations: DecorationSet,
-    /// The document as it stood when the highlighter last ran.
-    highlighted: Option<nib_model::Node>,
+    /// The open documents. Each tab holds one as its data.
+    tabs: segmented_button::SingleSelectModel,
 
-    path: Option<PathBuf>,
-    format: Format,
-    dirty: bool,
+    project: Option<Project>,
+    sidebar: Sidebar,
 
     find: Option<Find>,
-    outline: Vec<Heading>,
     nav: nav_bar::Model,
     error: Option<String>,
     context: Option<ContextPage>,
@@ -169,6 +194,53 @@ pub struct App {
 }
 
 impl App {
+    /// The active document.
+    ///
+    /// # Panics
+    ///
+    /// Never: a tab is opened at startup and the last one cannot be closed,
+    /// so there is always exactly one active.
+    pub(crate) fn doc(&self) -> &Document {
+        self.tabs
+            .active_data::<Document>()
+            .expect("there is always an active document")
+    }
+
+    fn doc_mut(&mut self) -> &mut Document {
+        self.tabs
+            .active_data_mut::<Document>()
+            .expect("there is always an active document")
+    }
+
+    /// Opens a document in a new tab and activates it.
+    fn add_tab(&mut self, document: Document) {
+        let title = document.title();
+        let id = self
+            .tabs
+            .insert()
+            .text(title)
+            .closable()
+            .data(document)
+            .id();
+        self.tabs.activate(id);
+        self.refresh();
+    }
+
+    /// Keeps the tab's label in step with its document.
+    fn retitle(&mut self) {
+        let Some(id) = self.tabs.active_data::<Document>().map(|_| self.tabs.active())
+        else {
+            return;
+        };
+        let title = self.doc().title();
+        let modified = if self.doc().dirty {
+            format!("• {title}")
+        } else {
+            title
+        };
+        self.tabs.text_set(id, modified);
+    }
+
     /// Puts a path at the head of the recent list.
     fn remember(&mut self, path: &std::path::Path) {
         self.config.remember(path);
@@ -181,23 +253,46 @@ impl App {
             Pending::New => self.update(Message::New),
             Pending::Open => self.update(Message::Open),
             Pending::OpenPath(path) => open_path(path),
+            Pending::CloseTab(id) => {
+                self.close_tab(id);
+                Task::none()
+            }
         }
+    }
+
+    /// Removes a tab and activates a neighbour.
+    fn close_tab(&mut self, id: segmented_button::Entity) {
+        let position = self.tabs.position(id);
+        self.tabs.remove(id);
+        // The tab to the left, or the first one — whichever still exists.
+        let next = position
+            .and_then(|p| self.tabs.entity_at(p.saturating_sub(1)))
+            .or_else(|| self.tabs.iter().next());
+        if let Some(next) = next {
+            self.tabs.activate(next);
+        }
+        self.find = None;
+        self.refresh();
+        self.rebuild_nav();
     }
 
     fn apply(&mut self, tr: Transaction) {
         if tr.doc_changed() {
-            self.dirty = true;
+            self.doc_mut().dirty = true;
         }
-        self.state = self.state.applied(tr);
+        let next = self.doc().state.applied(tr);
+        self.doc_mut().state = next;
         self.refresh();
+        self.retitle();
     }
 
     /// Recomputes everything derived from the document.
     fn refresh(&mut self) {
-        let doc = self.state.doc().clone();
-        if self.highlighted.as_ref() != Some(&doc) {
-            self.highlighted = Some(doc.clone());
-            self.outline = search::outline(&doc);
+        let doc = self.doc().state.doc().clone();
+        if self.doc().derived_from.as_ref() != Some(&doc) {
+            self.doc_mut().derived_from = Some(doc.clone());
+            let outline = search::outline(&doc);
+            self.doc_mut().outline = outline;
             self.rebuild_nav();
             if let Some(find) = &mut self.find
                 && let Ok(query) = Query::new(&find.query, find.matching)
@@ -209,11 +304,12 @@ impl App {
                     .or_else(|| search::next_from(&find.hits, 0));
             }
         }
-        self.decorations = self.build_decorations();
+        let decorations = self.build_decorations();
+        self.doc_mut().decorations = decorations;
     }
 
     fn build_decorations(&self) -> DecorationSet {
-        let mut all = self.highlighter.decorate(self.state.doc());
+        let mut all = self.highlighter.decorate(self.doc().state.doc());
         if let Some(find) = &self.find
             && !find.hits.is_empty()
         {
@@ -228,7 +324,26 @@ impl App {
 
     fn rebuild_nav(&mut self) {
         self.nav.clear();
-        for (index, heading) in self.outline.iter().enumerate() {
+        let rows: Vec<(usize, String, i64)> = match self.sidebar {
+            Sidebar::Outline => self
+                .doc()
+                .outline
+                .iter()
+                .enumerate()
+                .map(|(i, h)| (i, h.text.clone(), h.level))
+                .collect(),
+            Sidebar::Project => Vec::new(),
+        };
+        if self.sidebar == Sidebar::Project {
+            self.rebuild_project_nav();
+            return;
+        }
+        for (index, text, level) in rows {
+            let heading = Heading {
+                pos: 0,
+                level,
+                text,
+            };
             // Nesting is spelled with indentation rather than a tree: an
             // outline the reader has to expand is one they stop using.
             let indent = "    ".repeat(usize::try_from(heading.level.max(1) - 1).unwrap_or(0));
@@ -240,23 +355,61 @@ impl App {
             self.nav
                 .insert()
                 .text(format!("{indent}{text}"))
-                .data::<usize>(index);
+                .data(NavTarget::Heading(index));
         }
     }
 
+    /// The sidebar, showing the open folder.
+    fn rebuild_project_nav(&mut self) {
+        let Some(project) = &self.project else {
+            return;
+        };
+        let rows: Vec<(usize, String, usize, bool, bool, Option<crate::project::Status>)> =
+            project
+                .entries()
+                .iter()
+                .enumerate()
+                .map(|(i, e)| (i, e.name(), e.depth, e.is_dir, e.expanded, e.status))
+                .collect();
+        for (index, name, depth, is_dir, expanded, status) in rows {
+            let indent = "  ".repeat(depth);
+            let arrow = if is_dir {
+                if expanded { "▾ " } else { "▸ " }
+            } else {
+                ""
+            };
+            let marker = status.map_or("", crate::project::Status::marker);
+            let label = if marker.is_empty() {
+                format!("{indent}{arrow}{name}")
+            } else {
+                format!("{indent}{arrow}{name}  {marker}")
+            };
+            self.nav.insert().text(label).data(NavTarget::Entry(index));
+        }
+    }
+
+    /// Opens a file, reusing the tab when the one showing is empty and
+    /// untouched — a new window should not leave a blank tab behind.
     fn load(&mut self, path: PathBuf, format: Format, source: &str) {
-        let doc = self.converters.parse(format, source);
-        self.state = fresh_state(&self.schema, doc);
-        self.path = Some(path);
-        self.format = format;
-        self.dirty = false;
+        let node = self.converters.parse(format, source);
+        let document = Document::over(&self.schema, node, Some(path), format);
         self.error = None;
-        self.highlighted = None;
-        self.refresh();
+
+        let replaceable = self.doc().path.is_none()
+            && !self.doc().dirty
+            && self.doc().state.doc().text_content().trim().is_empty();
+        if replaceable {
+            *self.doc_mut() = document;
+            self.refresh();
+            self.retitle();
+        } else {
+            self.add_tab(document);
+            self.retitle();
+        }
     }
 
     fn save_to(&self, path: PathBuf, format: Format) -> Task<Message> {
-        let contents = self.converters.write(format, self.state.doc());
+        let contents = self.converters.write(format, self.doc().state.doc());
         cosmic::task::future(async move {
             match crate::document::write(path, contents).await {
                 Ok(path) => Message::Saved(path),
@@ -271,7 +424,7 @@ impl App {
     }
 
     fn run(&mut self, command: &commands::Command) {
-        if let Some(tr) = command(&self.state) {
+        if let Some(tr) = command(&self.doc().state) {
             self.apply(tr);
         }
     }
@@ -298,20 +451,6 @@ fn mark_name(command: &str) -> &str {
     }
 }
 
-/// A state over a document, with the history and input rules installed.
-fn fresh_state(schema: &Schema, doc: nib_model::Node) -> EditorState {
-    let selection = Selection::at_start(&doc);
-    EditorState::with_selection(
-        schema.clone(),
-        doc,
-        selection,
-        vec![
-            history::history(history::Options::default()),
-            input_rules::input_rules_plugin(),
-        ],
-    )
-}
-
 impl cosmic::Application for App {
     type Executor = cosmic::executor::Default;
     type Flags = Option<PathBuf>;
@@ -335,6 +474,15 @@ impl cosmic::Application for App {
             .map(|h| Config::get_entry(h).unwrap_or_else(|(_, config)| config))
             .unwrap_or_default();
 
+        let mut tabs = segmented_button::SingleSelectModel::default();
+        let first = tabs
+            .insert()
+            .text(fl!("untitled"))
+            .closable()
+            .data(Document::empty(&schema))
+            .id();
+        tabs.activate(first);
+
         let mut app = Self {
             core,
             config,
@@ -343,15 +491,11 @@ impl cosmic::Application for App {
             rules: input_rules::base(&schema),
             converters: Converters::new(&schema),
             highlighter: Highlighter::new(),
-            state: fresh_state(&schema, schema.empty_doc()),
+            tabs,
             schema,
-            decorations: DecorationSet::empty(),
-            highlighted: None,
-            path: None,
-            format: Format::default(),
-            dirty: false,
+            project: None,
+            sidebar: Sidebar::default(),
             find: None,
-            outline: Vec::new(),
             nav: nav_bar::Model::default(),
             error: None,
             context: None,
@@ -408,6 +552,28 @@ impl cosmic::Application for App {
         };
         vec![
             button(
+                "folder-open-symbolic",
+                fl!("open-folder"),
+                Message::OpenFolder,
+            ),
+            button(
+                if self.sidebar == Sidebar::Project {
+                    "view-list-symbolic"
+                } else {
+                    "folder-symbolic"
+                },
+                if self.sidebar == Sidebar::Project {
+                    fl!("outline")
+                } else {
+                    fl!("project")
+                },
+                Message::ShowSidebar(if self.sidebar == Sidebar::Project {
+                    Sidebar::Outline
+                } else {
+                    Sidebar::Project
+                }),
+            ),
+            button(
                 "document-open-recent-symbolic",
                 fl!("recent"),
                 Message::OpenContext(ContextPage::Recent),
@@ -447,10 +613,35 @@ impl cosmic::Application for App {
 
     fn on_nav_select(&mut self, id: nav_bar::Id) -> Task<Message> {
         self.nav.activate(id);
-        if let Some(index) = self.nav.data::<usize>(id).copied() {
-            return self.update(Message::GoToHeading(index));
+        match self.nav.data::<NavTarget>(id).copied() {
+            Some(NavTarget::Heading(index)) => self.update(Message::GoToHeading(index)),
+            Some(NavTarget::Entry(index)) => {
+                let Some(project) = &mut self.project else {
+                    return Task::none();
+                };
+                let Some(entry) = project.entries().get(index) else {
+                    return Task::none();
+                };
+                if entry.is_dir {
+                    project.toggle(index);
+                    self.rebuild_nav();
+                    return Task::none();
+                }
+                let path = entry.path.clone();
+                // A file already open is switched to rather than opened twice.
+                let existing = self.tabs.iter().find(|id| {
+                    self.tabs
+                        .data::<Document>(*id)
+                        .and_then(|d| d.path.as_deref())
+                        == Some(path.as_path())
+                });
+                match existing {
+                    Some(id) => self.update(Message::TabActivate(id)),
+                    None => open_path(path),
+                }
+            }
+            None => Task::none(),
         }
-        Task::none()
     }
 
     fn context_drawer(&self) -> Option<cosmic::app::context_drawer::ContextDrawer<'_, Message>> {
@@ -473,10 +664,7 @@ impl cosmic::Application for App {
         let _ = pending;
         Some(
             widget::dialog()
-                .title(fl!(
-                    "unsaved-title",
-                    name = crate::document::title(self.path())
-                ))
+                .title(fl!("unsaved-title", name = self.doc().title()))
                 .body(fl!("unsaved-body"))
                 .primary_action(
                     widget::button::suggested(fl!("save-changes"))
@@ -549,7 +737,7 @@ impl cosmic::Application for App {
             Message::Edit(_) => {}
 
             Message::Command(name) => {
-                if let Some(tr) = nib::toolbar_command(&self.state, name) {
+                if let Some(tr) = nib::toolbar_command(&self.doc().state, name) {
                     self.apply(tr);
                 }
             }
@@ -566,21 +754,12 @@ impl cosmic::Application for App {
                 // one thing a text editor must never do is throw away
                 // something the user typed because they clicked the wrong
                 // button.
-                if self.dirty {
-                    self.pending = Some(Pending::New);
-                    return Task::none();
-                }
-                self.state = fresh_state(&self.schema, self.schema.empty_doc());
-                self.path = None;
-                self.dirty = false;
-                self.highlighted = None;
-                self.refresh();
+                // A new document is a new tab, so nothing is discarded and
+                // the guard has nothing to ask about.
+                let document = Document::empty(&self.schema);
+                self.add_tab(document);
             }
             Message::Open => {
-                if self.dirty {
-                    self.pending = Some(Pending::Open);
-                    return Task::none();
-                }
                 return cosmic::task::future(async {
                     let dialog = cosmic::dialog::file_chooser::open::Dialog::new()
                         .title(fl!("open"));
@@ -617,7 +796,7 @@ impl cosmic::Application for App {
                 let Some(pending) = self.pending.take() else {
                     return Task::none();
                 };
-                self.dirty = false;
+                self.doc_mut().dirty = false;
                 return self.resume(pending);
             }
 
@@ -638,10 +817,6 @@ impl cosmic::Application for App {
                 return cosmic::command::set_theme(appearance.theme());
             }
             Message::OpenRecent(path) => {
-                if self.dirty {
-                    self.pending = Some(Pending::OpenPath(path));
-                    return Task::none();
-                }
                 return open_path(path);
             }
             Message::ClearRecent => {
@@ -649,10 +824,11 @@ impl cosmic::Application for App {
                 self.write_config();
             }
             Message::Save => {
-                let Some(path) = self.path.clone() else {
+                let Some(path) = self.doc().path.clone() else {
                     return self.update(Message::SaveAs);
                 };
-                return self.save_to(path, self.format);
+                let format = self.doc().format;
+                return self.save_to(path, format);
             }
             Message::SaveAs => {
                 let filters: Vec<String> = Format::all()
@@ -661,12 +837,13 @@ impl cosmic::Application for App {
                     .collect();
                 let suggested = format!(
                     "{}.{}",
-                    self.path
+                    self.doc()
+                        .path
                         .as_ref()
                         .and_then(|p| p.file_stem())
                         .and_then(|s| s.to_str())
                         .unwrap_or("document"),
-                    self.format.extension()
+                    self.doc().format.extension()
                 );
                 return cosmic::task::future(async move {
                     let mut dialog = cosmic::dialog::file_chooser::save::Dialog::new()
@@ -692,15 +869,20 @@ impl cosmic::Application for App {
                 });
             }
             Message::SaveTo(path, format) => {
-                self.format = format;
-                self.path = Some(path.clone());
+                self.doc_mut().format = format;
+                self.doc_mut().path = Some(path.clone());
                 return self.save_to(path, format);
             }
             Message::Saved(path) => {
                 self.remember(&path);
-                self.path = Some(path);
-                self.dirty = false;
+                self.doc_mut().path = Some(path);
+                self.doc_mut().dirty = false;
                 self.error = None;
+                self.retitle();
+                if let Some(project) = &mut self.project {
+                    project.refresh_status();
+                }
+                self.rebuild_nav();
                 // A save that something was waiting on carries on with it.
                 if let Some(pending) = self.after_save.take() {
                     return self.resume(pending);
@@ -717,15 +899,19 @@ impl cosmic::Application for App {
                 self.refresh();
             }
             Message::FindChanged(query) => {
+                let doc = self
+                    .tabs
+                    .active_data::<Document>()
+                    .expect("there is always an active document");
                 if let Some(find) = &mut self.find {
                     find.query = query;
                     match Query::new(&find.query, find.matching) {
                         Ok(compiled) => {
                             find.error = None;
-                            find.hits = search::find(self.state.doc(), &compiled);
+                            find.hits = search::find(doc.state.doc(), &compiled);
                             find.current = search::next_from(
                                 &find.hits,
-                                self.state.selection().from(),
+                                doc.state.selection().from(),
                             );
                         }
                         Err(error) => {
@@ -734,8 +920,9 @@ impl cosmic::Application for App {
                             find.current = None;
                         }
                     }
-                    self.decorations = self.build_decorations();
                 }
+                let decorations = self.build_decorations();
+                self.doc_mut().decorations = decorations;
             }
             Message::ReplaceChanged(text) => {
                 if let Some(find) = &mut self.find {
@@ -759,7 +946,7 @@ impl cosmic::Application for App {
                 let Some(find) = &self.find else {
                     return Task::none();
                 };
-                let selection = self.state.selection();
+                let selection = self.doc().state.selection();
                 let index = if forward {
                     search::next_from(&find.hits, selection.to())
                 } else {
@@ -772,7 +959,7 @@ impl cosmic::Application for App {
                 if let Some(find) = &mut self.find {
                     find.current = Some(index);
                 }
-                let tr = search::select(&self.state, hit);
+                let tr = search::select(&self.doc().state, hit);
                 self.apply(tr);
             }
             Message::ReplaceOne => {
@@ -782,7 +969,7 @@ impl cosmic::Application for App {
                 let Some(hit) = find.current.and_then(|i| find.hits.get(i).copied()) else {
                     return Task::none();
                 };
-                if let Some(tr) = search::replace(&self.state, hit, &find.replacement) {
+                if let Some(tr) = search::replace(&self.doc().state, hit, &find.replacement) {
                     self.apply(tr);
                     let query = find.query.clone();
                     return self.update(Message::FindChanged(query));
@@ -795,7 +982,9 @@ impl cosmic::Application for App {
                 let Ok(query) = Query::new(&find.query, find.matching) else {
                     return Task::none();
                 };
-                if let Some(tr) = search::replace_all(&self.state, &query, &find.replacement) {
+                if let Some(tr) =
+                    search::replace_all(&self.doc().state, &query, &find.replacement)
+                {
                     self.apply(tr);
                     let text = find.query.clone();
                     return self.update(Message::FindChanged(text));
@@ -807,10 +996,10 @@ impl cosmic::Application for App {
                 self.write_config();
             }
             Message::GoToHeading(index) => {
-                let Some(heading) = self.outline.get(index) else {
+                let Some(heading) = self.doc().outline.get(index).cloned() else {
                     return Task::none();
                 };
-                let mut tr = self.state.tr();
+                let mut tr = self.doc().state.tr();
                 tr.set_selection(Selection::cursor(heading.pos));
                 self.apply(tr.clone().scroll_into_view());
             }
@@ -845,6 +1034,72 @@ impl cosmic::Application for App {
                 self.write_config();
             }
             Message::ConfigChanged(config) => self.config = config,
+
+            Message::TabActivate(id) => {
+                self.tabs.activate(id);
+                self.find = None;
+                self.refresh();
+                self.rebuild_nav();
+            }
+            Message::TabClose(id) => {
+                // The last tab is emptied rather than removed: a window with
+                // no document in it is a window with nothing to do.
+                if self.tabs.iter().count() <= 1 {
+                    *self.doc_mut() = Document::empty(&self.schema);
+                    self.retitle();
+                    self.refresh();
+                    return Task::none();
+                }
+                if self
+                    .tabs
+                    .data::<Document>(id)
+                    .is_some_and(|document| document.dirty)
+                {
+                    self.tabs.activate(id);
+                    self.pending = Some(Pending::CloseTab(id));
+                    return Task::none();
+                }
+                self.close_tab(id);
+            }
+
+            Message::OpenFolder => {
+                return cosmic::task::future(async {
+                    let dialog = cosmic::dialog::file_chooser::open::Dialog::new()
+                        .title(fl!("open-folder"));
+                    match dialog.open_folder().await {
+                        Ok(response) => match response.url().to_file_path() {
+                            Ok(path) => Message::FolderOpened(path),
+                            Err(()) => Message::Failed(fl!("not-a-file")),
+                        },
+                        Err(_) => Message::DismissError,
+                    }
+                });
+            }
+            Message::FolderOpened(path) => {
+                self.project = Some(Project::open(path));
+                self.sidebar = Sidebar::Project;
+                self.config.outline = true;
+                self.write_config();
+                self.rebuild_nav();
+            }
+            Message::CloseFolder => {
+                self.project = None;
+                self.sidebar = Sidebar::Outline;
+                self.rebuild_nav();
+            }
+            Message::ShowSidebar(which) => {
+                self.sidebar = which;
+                self.rebuild_nav();
+            }
+
+            Message::SetLineNumbers(on) => {
+                self.config.line_numbers = on;
+                self.write_config();
+            }
+            Message::SetWrapCode(on) => {
+                self.config.wrap_code = on;
+                self.write_config();
+            }
         }
         Task::none()
     }
@@ -852,8 +1107,8 @@ impl cosmic::Application for App {
     fn view(&self) -> Element<'_, Message> {
         let spacing = cosmic::theme::spacing();
 
-        let document = editor(&self.state)
-            .decorations(&self.decorations)
+        let document = editor(&self.doc().state)
+            .decorations(&self.doc().decorations)
             .keymap(&self.keymap)
             .input_rules(&self.rules)
             .style(self.style())
@@ -877,7 +1132,15 @@ impl cosmic::Application for App {
                 .height(Length::Fill),
         );
 
-        let mut screen = widget::column::with_capacity(5).push(self.toolbar());
+        let mut screen = widget::column::with_capacity(6);
+        if self.tabs.iter().count() > 1 {
+            screen = screen.push(
+                tab_bar::horizontal(&self.tabs)
+                    .on_activate(Message::TabActivate)
+                    .on_close(Message::TabClose),
+            );
+        }
+        screen = screen.push(self.toolbar());
         if let Some(find) = &self.find {
             screen = screen.push(Self::find_bar(find));
         }
@@ -896,7 +1159,7 @@ impl App {
     // -- what the chrome needs to see -------------------------------------
 
     pub(crate) fn state(&self) -> &EditorState {
-        &self.state
+        &self.doc().state
     }
 
     pub(crate) fn schema(&self) -> &Schema {
@@ -912,15 +1175,15 @@ impl App {
     }
 
     pub(crate) fn path(&self) -> Option<&std::path::Path> {
-        self.path.as_deref()
+        self.doc().path.as_deref()
     }
 
     pub(crate) fn format(&self) -> Format {
-        self.format
+        self.doc().format
     }
 
     pub(crate) fn is_dirty(&self) -> bool {
-        self.dirty
+        self.doc().dirty
     }
 
     /// Whether a mark is on where the caret is, so its button can be shown
@@ -933,11 +1196,12 @@ impl App {
         let Some(id) = self.schema.mark_id(mark_name(name)) else {
             return false;
         };
-        let selection = self.state.selection();
+        let selection = self.doc().state.selection();
         if selection.is_empty() {
-            return self.state.marks().iter().any(|m| m.typ().id() == id);
+            return self.doc().state.marks().iter().any(|m| m.typ().id() == id);
         }
-        self.state
+        self.doc()
+            .state
             .doc()
             .range_has_mark(selection.from(), selection.to(), id)
     }

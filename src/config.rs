@@ -139,6 +139,10 @@ impl From<Appearance> for u16 {
 /// is still something to read rather than search.
 pub const RECENT_LIMIT: usize = 10;
 
+/// A pile of booleans, and deliberately so: each is an independent preference
+/// the user sets or does not, and folding them into enums would invent
+/// relationships between them that do not exist.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Debug, CosmicConfigEntry, Eq, PartialEq)]
 #[version = 1]
 pub struct Config {
@@ -164,6 +168,11 @@ pub struct Config {
     pub appearance: u16,
     /// Recently opened files, most recent first.
     pub recent: Vec<String>,
+    /// Whether code blocks get a gutter of line numbers.
+    pub line_numbers: bool,
+    /// Whether code blocks wrap. Off is what a programmer wants and on is what
+    /// a reader wants, so it is a setting rather than a decision.
+    pub wrap_code: bool,
 }
 
 impl Default for Config {
@@ -177,6 +186,8 @@ impl Default for Config {
             measure: 78,
             appearance: 0,
             recent: Vec::new(),
+            line_numbers: false,
+            wrap_code: true,
         }
     }
 }
@@ -238,6 +249,8 @@ impl Config {
         if !self.caret_glides {
             style.caret_glide = std::time::Duration::ZERO;
         }
+        style.line_numbers = self.line_numbers;
+        style.wrap_code = self.wrap_code;
         style
     }
 

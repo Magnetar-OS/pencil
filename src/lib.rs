@@ -10,5 +10,6 @@ pub mod chrome;
 pub mod config;
 pub mod document;
 pub mod i18n;
+pub mod project;
 
 pub use app::{APP_ID, App};

@@ -92,3 +92,10 @@ headings = Headings
 zoom-in = Zoom in
 zoom-out = Zoom out
 zoom-reset = Actual size
+
+# Project
+open-folder = Open folder…
+close-folder = Close folder
+project = Files
+line-numbers = Line numbers in code
+wrap-code = Wrap long code lines

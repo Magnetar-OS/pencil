@@ -311,6 +311,17 @@ impl App {
                 ))
                 .into(),
             widget::settings::section()
+                .title(fl!("code"))
+                .add(widget::settings::item(
+                    fl!("line-numbers"),
+                    widget::toggler(config.line_numbers).on_toggle(Message::SetLineNumbers),
+                ))
+                .add(widget::settings::item(
+                    fl!("wrap-code"),
+                    widget::toggler(config.wrap_code).on_toggle(Message::SetWrapCode),
+                ))
+                .into(),
+            widget::settings::section()
                 .title(fl!("caret"))
                 .add(widget::settings::item(fl!("caret-shape"), caret))
                 .add(widget::settings::item(

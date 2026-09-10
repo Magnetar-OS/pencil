@@ -30,6 +30,9 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use nib_html::Html;
+use nib_model::decoration::DecorationSet;
+use nib_model::search::Heading;
+use nib_model::state::{EditorState, Selection};
 use nib_markdown::{Dialect, Markdown};
 use nib_model::node::Node;
 use nib_model::schema::Schema;
@@ -206,6 +209,75 @@ pub async fn write(path: PathBuf, contents: String) -> Result<PathBuf, Error> {
         .await
         .map_err(|e| Error::io(&path, &e))?;
     Ok(path)
+}
+
+/// One open document.
+///
+/// Everything a tab is: the editor's state, where it came from, and the things
+/// derived from it that would be wasteful to recompute on every frame.
+pub struct Document {
+    pub state: EditorState,
+    pub path: Option<PathBuf>,
+    pub format: Format,
+    pub dirty: bool,
+    /// Syntax colours and search hits.
+    pub decorations: DecorationSet,
+    /// The document as it stood when the derived things were last computed.
+    pub derived_from: Option<Node>,
+    pub outline: Vec<Heading>,
+}
+
+impl std::fmt::Debug for Document {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Document")
+            .field("path", &self.path)
+            .field("format", &self.format)
+            .field("dirty", &self.dirty)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Document {
+    /// An empty document of `schema`.
+    #[must_use]
+    pub fn empty(schema: &Schema) -> Self {
+        Self::over(schema, schema.empty_doc(), None, Format::default())
+    }
+
+    /// A document over a parsed node.
+    #[must_use]
+    pub fn over(schema: &Schema, doc: Node, path: Option<PathBuf>, format: Format) -> Self {
+        Self {
+            state: fresh_state(schema, doc),
+            path,
+            format,
+            dirty: false,
+            decorations: DecorationSet::empty(),
+            derived_from: None,
+            outline: Vec::new(),
+        }
+    }
+
+    /// The name shown on the tab and in the status bar.
+    #[must_use]
+    pub fn title(&self) -> String {
+        title(self.path.as_deref())
+    }
+}
+
+/// A state over a document, with the history and input rules installed.
+#[must_use]
+pub fn fresh_state(schema: &Schema, doc: Node) -> EditorState {
+    let selection = Selection::at_start(&doc);
+    EditorState::with_selection(
+        schema.clone(),
+        doc,
+        selection,
+        vec![
+            nib_model::history::history(nib_model::history::Options::default()),
+            nib_model::input_rules::input_rules_plugin(),
+        ],
+    )
 }
 
 /// The name shown in the title bar.
