@@ -58,7 +58,6 @@ impl Sheet {
     fn text_width(self) -> f32 {
         self.width - self.margin * 2.0
     }
-
 }
 
 /// Body text size, in points. Everything else is a multiple of it.
@@ -157,8 +156,7 @@ fn paginate(doc: &Node, fonts: &mut ct::FontSystem, sheet: Sheet) -> Vec<Page> {
     let mut row: Option<(usize, usize)> = None;
 
     for block in &blocks {
-        let indent = sheet.margin
-            + steps(block.indent + block.quote_depth) * INDENT;
+        let indent = sheet.margin + steps(block.indent + block.quote_depth) * INDENT;
 
         // A table cell is placed by its column rather than in the flow, and
         // the row only advances once every cell in it has been laid out.
@@ -229,13 +227,20 @@ fn paginate(doc: &Node, fonts: &mut ct::FontSystem, sheet: Sheet) -> Vec<Page> {
             }
             Kind::Text => {
                 let code = block.type_name == nodes::CODE_BLOCK;
-                let lines = lay_out(block, fonts, sheet.margin + sheet.text_width() - indent, false);
+                let lines = lay_out(
+                    block,
+                    fonts,
+                    sheet.margin + sheet.text_width() - indent,
+                    false,
+                );
                 let start_page = pages.len();
                 let start_y = y;
                 for line in lines {
                     place(&mut pages, &mut y, bottom, sheet, indent, line);
                 }
-                decorate(&mut pages, block, sheet, indent, start_page, start_y, y, code);
+                decorate(
+                    &mut pages, block, sheet, indent, start_page, start_y, y, code,
+                );
                 // List items breathe less than paragraphs do: a bulleted list
                 // spaced like prose reads as several lists.
                 y += if block.indent > 0 { GAP * 0.4 } else { GAP };
@@ -353,12 +358,15 @@ fn lay_out(block: &Block, fonts: &mut ct::FontSystem, width: f32, force_bold: bo
         .map_or(if code { BODY * 0.95 } else { BODY }, heading_size);
     let heading = block.level.is_some() || force_bold;
 
-    let prefix = block.marker.as_ref().map_or(String::new(), |marker| match marker {
-        Marker::Bullet => "\u{2022}  ".to_owned(),
-        Marker::Number(n) => format!("{n}.  "),
-        Marker::Check(true) => "\u{2611}  ".to_owned(),
-        Marker::Check(false) => "\u{2610}  ".to_owned(),
-    });
+    let prefix = block
+        .marker
+        .as_ref()
+        .map_or(String::new(), |marker| match marker {
+            Marker::Bullet => "\u{2022}  ".to_owned(),
+            Marker::Number(n) => format!("{n}.  "),
+            Marker::Check(true) => "\u{2611}  ".to_owned(),
+            Marker::Check(false) => "\u{2610}  ".to_owned(),
+        });
 
     // The runs the block's marks divide it into, as byte ranges over `text`.
     let mut runs: Vec<(String, bool, bool, bool)> = Vec::new();
@@ -401,7 +409,12 @@ fn lay_out_text(
     bold: bool,
     italic: bool,
 ) -> Vec<Line> {
-    shape(&[(text.to_owned(), bold, italic, false)], fonts, width, size)
+    shape(
+        &[(text.to_owned(), bold, italic, false)],
+        fonts,
+        width,
+        size,
+    )
 }
 
 /// The one place cosmic-text is asked anything.
@@ -535,21 +548,22 @@ fn write_pdf(pages: &[Page], fonts: &mut ct::FontSystem, title: &str, sheet: She
     let media = Rect::new(0.0, 0.0, sheet.width, sheet.height);
     for (index, page) in pages.iter().enumerate() {
         let mut writer = pdf.page(page_ids[index]);
-        writer.parent(tree).media_box(media).contents(content_ids[index]);
+        writer
+            .parent(tree)
+            .media_box(media)
+            .contents(content_ids[index]);
         let mut resources = writer.resources();
         let mut fonts_dict = resources.fonts();
         for embedded in used.values() {
-            fonts_dict.pair(
-                Name(embedded.name.as_bytes()),
-                embedded.reference,
-            );
+            fonts_dict.pair(Name(embedded.name.as_bytes()), embedded.reference);
         }
         fonts_dict.finish();
         resources.finish();
         writer.finish();
 
         let content = draw(page, &used);
-        pdf.stream(content_ids[index], &content).filter(Filter::FlateDecode);
+        pdf.stream(content_ids[index], &content)
+            .filter(Filter::FlateDecode);
     }
 
     for ((id, weight), embedded) in &used {
@@ -715,11 +729,14 @@ fn embed(
     file.finish();
 
     // The map back from glyph to text, so the PDF can be searched and copied.
-    let mut cmap = UnicodeCmap::new(Name(b"Custom"), SystemInfo {
-        registry: Str(b"Adobe"),
-        ordering: Str(b"Identity"),
-        supplement: 0,
-    });
+    let mut cmap = UnicodeCmap::new(
+        Name(b"Custom"),
+        SystemInfo {
+            registry: Str(b"Adobe"),
+            ordering: Str(b"Identity"),
+            supplement: 0,
+        },
+    );
     for (id, text) in &embedded.glyphs {
         if !text.is_empty() {
             cmap.pair_with_multiple(*id, text.chars());
@@ -749,7 +766,8 @@ pub async fn send(pdf: Vec<u8>, title: &str) -> Result<(), String> {
     tokio::fs::write(&path, pdf)
         .await
         .map_err(|error| format!("{}: {error}", path.display()))?;
-    let file = std::fs::File::open(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+    let file =
+        std::fs::File::open(&path).map_err(|error| format!("{}: {error}", path.display()))?;
     let _ = std::fs::remove_file(&path);
 
     let proxy = PrintProxy::new().await.map_err(|error| error.to_string())?;

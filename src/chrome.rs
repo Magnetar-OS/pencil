@@ -30,9 +30,7 @@ impl App {
         // that holds it `Fill` too — and a `Fill` row in a column with a
         // `Fill` page underneath it splits the window in half. Pinning the
         // rule to the height of a button is what keeps the toolbar a toolbar.
-        let separator = || {
-            widget::divider::vertical::default().height(Length::Fixed(20.0))
-        };
+        let separator = || widget::divider::vertical::default().height(Length::Fixed(20.0));
 
         let mark = |icon: &'static str, tooltip: String, name: &'static str| {
             let enabled = nib::toolbar_command(self.state(), name).is_some();
@@ -66,12 +64,11 @@ impl App {
 
         let structure = |icon: &'static str, tooltip: String, name: &'static str| {
             widget::tooltip(
-                widget::button::icon(widget::icon::from_name(icon).size(16))
-                    .on_press_maybe(
-                        nib::toolbar_command(self.state(), name)
-                            .is_some()
-                            .then_some(Message::Command(name)),
-                    ),
+                widget::button::icon(widget::icon::from_name(icon).size(16)).on_press_maybe(
+                    nib::toolbar_command(self.state(), name)
+                        .is_some()
+                        .then_some(Message::Command(name)),
+                ),
                 widget::text::body(tooltip),
                 widget::tooltip::Position::Bottom,
             )
@@ -159,15 +156,18 @@ impl App {
                     Some(Message::Correct(from, to, suggestion)),
                 ));
             }
-            items.push(item(
-                fl!("add-to-dictionary"),
-                Some(Message::Learn(word)),
-            ));
+            items.push(item(fl!("add-to-dictionary"), Some(Message::Learn(word))));
         }
 
         items.extend([
-            item(fl!("cut"), has_selection.then_some(Message::Clipboard("cut"))),
-            item(fl!("copy"), has_selection.then_some(Message::Clipboard("copy"))),
+            item(
+                fl!("cut"),
+                has_selection.then_some(Message::Clipboard("cut")),
+            ),
+            item(
+                fl!("copy"),
+                has_selection.then_some(Message::Clipboard("copy")),
+            ),
             item(fl!("paste"), Some(Message::Clipboard("paste"))),
             item(fl!("select-all"), Some(Message::Command("select_all"))),
             command(fl!("bold"), "bold"),
@@ -222,18 +222,16 @@ impl App {
                 widget::button::icon(widget::icon::from_name("go-down-symbolic").size(16))
                     .on_press(Message::FindNext),
             )
-            .push(
-                widget::tooltip(
-                    widget::button::icon(
-                        widget::icon::from_name("folder-saved-search-symbolic").size(16),
-                    )
-                    // Greyed rather than hidden: a button that appears when a
-                    // folder opens is a button nobody knows is there.
-                    .on_press_maybe(project.then_some(Message::FindInProject)),
-                    widget::text::caption(fl!("find-in-project")),
-                    widget::tooltip::Position::Bottom,
-                ),
-            )
+            .push(widget::tooltip(
+                widget::button::icon(
+                    widget::icon::from_name("folder-saved-search-symbolic").size(16),
+                )
+                // Greyed rather than hidden: a button that appears when a
+                // folder opens is a button nobody knows is there.
+                .on_press_maybe(project.then_some(Message::FindInProject)),
+                widget::text::caption(fl!("find-in-project")),
+                widget::tooltip::Position::Bottom,
+            ))
             .push(widget::text::caption(count).width(Length::Shrink))
             .push(
                 widget::text_input(fl!("replace-with"), &find.replacement)
@@ -278,10 +276,8 @@ impl App {
                 .push(widget::icon::from_name("dialog-error-symbolic").size(16))
                 .push(widget::text::body(error.to_owned()).width(Length::Fill))
                 .push(
-                    widget::button::icon(
-                        widget::icon::from_name("window-close-symbolic").size(16),
-                    )
-                    .on_press(Message::DismissError),
+                    widget::button::icon(widget::icon::from_name("window-close-symbolic").size(16))
+                        .on_press(Message::DismissError),
                 ),
         )
         .class(cosmic::theme::Container::Primary)
@@ -336,14 +332,7 @@ impl App {
             CaretShape::all()
                 .iter()
                 .position(|s| *s == config.caret_shape()),
-            |index| {
-                Message::SetCaret(
-                    CaretShape::all()
-                        .get(index)
-                        .copied()
-                        .unwrap_or_default(),
-                )
-            },
+            |index| Message::SetCaret(CaretShape::all().get(index).copied().unwrap_or_default()),
         );
 
         let appearance = widget::dropdown(
@@ -351,11 +340,7 @@ impl App {
             Appearance::all()
                 .iter()
                 .position(|a| *a == config.appearance()),
-            |index| {
-                Message::SetTheme(
-                    Appearance::all().get(index).copied().unwrap_or_default(),
-                )
-            },
+            |index| Message::SetTheme(Appearance::all().get(index).copied().unwrap_or_default()),
         );
 
         widget::settings::view_column(vec![
@@ -568,9 +553,7 @@ impl App {
         widget::settings::item(
             fl!("spell-language"),
             widget::dropdown(labels, selected, move |index| {
-                Message::SetSpellLanguage(
-                    installed.get(index).cloned().unwrap_or_default(),
-                )
+                Message::SetSpellLanguage(installed.get(index).cloned().unwrap_or_default())
             }),
         )
     }

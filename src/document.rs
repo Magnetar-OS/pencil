@@ -30,12 +30,12 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use nib_html::Html;
-use nib_model::decoration::DecorationSet;
-use nib_model::search::Heading;
-use nib_model::state::{EditorState, Selection};
 use nib_markdown::{Dialect, Markdown};
+use nib_model::decoration::DecorationSet;
 use nib_model::node::Node;
 use nib_model::schema::Schema;
+use nib_model::search::Heading;
+use nib_model::state::{EditorState, Selection};
 use nib_text::Text;
 
 /// How a document is written down.

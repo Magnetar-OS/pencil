@@ -75,7 +75,10 @@ fn a_long_document_runs_onto_more_pages() {
         .and_then(|rest| rest.split_whitespace().next())
         .and_then(|n| n.parse().ok())
         .expect("a page count");
-    assert!(count > 1, "200 paragraphs do not fit on one page, got {count}");
+    assert!(
+        count > 1,
+        "200 paragraphs do not fit on one page, got {count}"
+    );
 }
 
 #[test]

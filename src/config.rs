@@ -58,10 +58,7 @@ impl From<CaretShape> for nib::Caret {
 // disk, and the conversion is here rather than at every call site.
 impl From<u16> for CaretShape {
     fn from(index: u16) -> Self {
-        Self::all()
-            .get(index as usize)
-            .copied()
-            .unwrap_or_default()
+        Self::all().get(index as usize).copied().unwrap_or_default()
     }
 }
 
@@ -268,10 +265,7 @@ impl Config {
     #[must_use]
     pub fn style(&self, theme: &cosmic::Theme) -> nib::Style {
         let mut style = nib::Style::from_theme(theme);
-        style.text_size = f32::from(
-            self.text_size
-                .clamp(MINIMUM_TEXT_SIZE, MAXIMUM_TEXT_SIZE),
-        );
+        style.text_size = f32::from(self.text_size.clamp(MINIMUM_TEXT_SIZE, MAXIMUM_TEXT_SIZE));
         style.caret = self.caret_shape().into();
         if !self.caret_blinks {
             style.blink_period = std::time::Duration::ZERO;

@@ -248,7 +248,9 @@ fn git_status(root: &Path) -> BTreeMap<PathBuf, Status> {
             if !dir.starts_with(root) || dir == root {
                 break;
             }
-            statuses.entry(dir.to_path_buf()).or_insert(Status::Modified);
+            statuses
+                .entry(dir.to_path_buf())
+                .or_insert(Status::Modified);
             parent = dir.parent();
         }
     }

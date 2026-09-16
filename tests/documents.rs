@@ -112,7 +112,10 @@ fn a_format_is_chosen_by_extension() {
 fn only_html_claims_to_be_lossless() {
     assert!(Format::Html.lossless());
     for format in [Format::Markdown, Format::Mdc, Format::Mdx, Format::Text] {
-        assert!(!format.lossless(), "{format} should not claim to be lossless");
+        assert!(
+            !format.lossless(),
+            "{format} should not claim to be lossless"
+        );
     }
 }
 
@@ -155,7 +158,11 @@ async fn a_save_is_atomic_and_leaves_no_temporary_behind() {
     while let Ok(Some(entry)) = entries.next_entry().await {
         names.push(entry.file_name().to_string_lossy().into_owned());
     }
-    assert_eq!(names, ["document.md"], "the temporary file was renamed away");
+    assert_eq!(
+        names,
+        ["document.md"],
+        "the temporary file was renamed away"
+    );
     let _ = tokio::fs::remove_dir_all(&dir).await;
 }
 

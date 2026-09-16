@@ -13,16 +13,15 @@
 
 use std::path::PathBuf;
 
+use cosmic::Application as _;
 use cosmic::app::{Core, Task};
 use cosmic::cosmic_config::CosmicConfigEntry as _;
 use cosmic::iced::{Length, Subscription};
-use cosmic::Application as _;
 use cosmic::prelude::*;
 use cosmic::widget::{self, nav_bar, segmented_button, tab_bar};
 
 use nib::{Action, editor};
 use nib_highlight::Highlighter;
-use nib_spell::Speller;
 use nib_model::decoration::DecorationSet;
 use nib_model::input_rules::{self, InputRule};
 use nib_model::keymap::Keymap;
@@ -30,11 +29,12 @@ use nib_model::schema::Schema;
 use nib_model::search::{self, Heading, Matching, Query};
 use nib_model::state::{EditorState, Selection};
 use nib_model::{Transaction, basic, commands};
+use nib_spell::Speller;
 
 use crate::config::{Appearance, CaretShape, Config};
 use crate::document::{Converters, Document, Format};
-use crate::project::{self, Project};
 use crate::fl;
+use crate::project::{self, Project};
 
 /// The application's unique identifier.
 pub const APP_ID: &str = "com.magnetaros.Pencil";
@@ -283,7 +283,10 @@ impl App {
 
     /// Keeps the tab's label in step with its document.
     fn retitle(&mut self) {
-        let Some(id) = self.tabs.active_data::<Document>().map(|_| self.tabs.active())
+        let Some(id) = self
+            .tabs
+            .active_data::<Document>()
+            .map(|_| self.tabs.active())
         else {
             return;
         };
@@ -392,11 +395,7 @@ impl App {
         if let Some(find) = &self.find
             && !find.hits.is_empty()
         {
-            all = all.with(
-                search::decorations(&find.hits, find.current)
-                    .all()
-                    .to_vec(),
-            );
+            all = all.with(search::decorations(&find.hits, find.current).all().to_vec());
         }
         all
     }
@@ -450,13 +449,19 @@ impl App {
         let Some(project) = &self.project else {
             return;
         };
-        let rows: Vec<(usize, String, usize, bool, bool, Option<crate::project::Status>)> =
-            project
-                .entries()
-                .iter()
-                .enumerate()
-                .map(|(i, e)| (i, e.name(), e.depth, e.is_dir, e.expanded, e.status))
-                .collect();
+        let rows: Vec<(
+            usize,
+            String,
+            usize,
+            bool,
+            bool,
+            Option<crate::project::Status>,
+        )> = project
+            .entries()
+            .iter()
+            .enumerate()
+            .map(|(i, e)| (i, e.name(), e.depth, e.is_dir, e.expanded, e.status))
+            .collect();
         for (index, name, depth, is_dir, expanded, status) in rows {
             let indent = "  ".repeat(depth);
             let arrow = if is_dir {
@@ -499,7 +504,11 @@ impl App {
             });
             last = Some(hit.path.clone());
             let text = if hit.text.len() > 80 {
-                let cut = hit.text.char_indices().nth(80).map_or(hit.text.len(), |(i, _)| i);
+                let cut = hit
+                    .text
+                    .char_indices()
+                    .nth(80)
+                    .map_or(hit.text.len(), |(i, _)| i);
                 format!("{}\u{2026}", &hit.text[..cut])
             } else {
                 hit.text.clone()
@@ -677,9 +686,7 @@ impl cosmic::Application for App {
         let task = match flags {
             // A folder rather than a file: `pencil ~/notes` opens the folder,
             // which is also how a new window inherits the one it came from.
-            Some(path) if path.is_dir() => {
-                cosmic::task::message(Message::FolderOpened(path))
-            }
+            Some(path) if path.is_dir() => cosmic::task::message(Message::FolderOpened(path)),
             Some(path) => cosmic::task::future(async move {
                 match crate::document::read(path).await {
                     Ok((path, format, source)) => Message::Opened(path, format, source),
@@ -705,19 +712,11 @@ impl cosmic::Application for App {
         };
         vec![
             button("document-new-symbolic", fl!("new"), Message::New),
-            button(
-                "window-new-symbolic",
-                fl!("new-window"),
-                Message::NewWindow,
-            ),
+            button("window-new-symbolic", fl!("new-window"), Message::NewWindow),
             button("document-open-symbolic", fl!("open"), Message::Open),
             button("document-print-symbolic", fl!("print"), Message::Print),
             button("document-save-symbolic", fl!("save"), Message::Save),
-            button(
-                "document-save-as-symbolic",
-                fl!("save-as"),
-                Message::SaveAs,
-            ),
+            button("document-save-as-symbolic", fl!("save-as"), Message::SaveAs),
         ]
     }
 
@@ -759,11 +758,7 @@ impl cosmic::Application for App {
                 Message::OpenContext(ContextPage::Recent),
             ),
             button("edit-find-symbolic", fl!("find"), Message::ToggleFind),
-            button(
-                "view-list-symbolic",
-                fl!("outline"),
-                Message::ToggleOutline,
-            ),
+            button("view-list-symbolic", fl!("outline"), Message::ToggleOutline),
             button(
                 "preferences-system-symbolic",
                 fl!("settings"),
@@ -827,17 +822,19 @@ impl cosmic::Application for App {
 
     fn context_drawer(&self) -> Option<cosmic::app::context_drawer::ContextDrawer<'_, Message>> {
         let page = self.context?;
-        Some(cosmic::app::context_drawer::context_drawer(
-            match page {
-                ContextPage::Settings => self.settings_page(),
-                ContextPage::Shortcuts => self.shortcuts_page(),
-                ContextPage::Statistics => self.statistics_page(),
-                ContextPage::Recent => self.recent_page(),
-                ContextPage::About => Self::about_page(),
-            },
-            Message::CloseContext,
+        Some(
+            cosmic::app::context_drawer::context_drawer(
+                match page {
+                    ContextPage::Settings => self.settings_page(),
+                    ContextPage::Shortcuts => self.shortcuts_page(),
+                    ContextPage::Statistics => self.statistics_page(),
+                    ContextPage::Recent => self.recent_page(),
+                    ContextPage::About => Self::about_page(),
+                },
+                Message::CloseContext,
+            )
+            .title(page.title()),
         )
-        .title(page.title()))
     }
 
     fn dialog(&self) -> Option<Element<'_, Message>> {
@@ -848,8 +845,7 @@ impl cosmic::Application for App {
                 .title(fl!("unsaved-title", name = self.doc().title()))
                 .body(fl!("unsaved-body"))
                 .primary_action(
-                    widget::button::suggested(fl!("save-changes"))
-                        .on_press(Message::ConfirmSave),
+                    widget::button::suggested(fl!("save-changes")).on_press(Message::ConfirmSave),
                 )
                 .secondary_action(
                     widget::button::destructive(fl!("discard-changes"))
@@ -877,11 +873,11 @@ impl cosmic::Application for App {
             // document's: the editor's keymap produces transactions, and none
             // of these is one.
             cosmic::iced::event::listen_with(|event, _status, _window| {
-                let cosmic::iced::Event::Keyboard(
-                    cosmic::iced::keyboard::Event::KeyPressed {
-                        key, modifiers, ..
-                    },
-                ) = event
+                let cosmic::iced::Event::Keyboard(cosmic::iced::keyboard::Event::KeyPressed {
+                    key,
+                    modifiers,
+                    ..
+                }) = event
                 else {
                     return None;
                 };
@@ -929,8 +925,7 @@ impl cosmic::Application for App {
                                 self.apply(tr.clone());
                             }
                         }
-                        return cosmic::iced::clipboard::write(text)
-                            .map(cosmic::Action::App);
+                        return cosmic::iced::clipboard::write(text).map(cosmic::Action::App);
                     }
                     "paste" => {
                         return cosmic::iced::clipboard::read()
@@ -999,14 +994,12 @@ impl cosmic::Application for App {
             }
             Message::Open => {
                 return cosmic::task::future(async {
-                    let dialog = cosmic::dialog::file_chooser::open::Dialog::new()
-                        .title(fl!("open"));
+                    let dialog =
+                        cosmic::dialog::file_chooser::open::Dialog::new().title(fl!("open"));
                     match dialog.open_file().await {
                         Ok(response) => match response.url().to_file_path() {
                             Ok(path) => match crate::document::read(path).await {
-                                Ok((path, format, source)) => {
-                                    Message::Opened(path, format, source)
-                                }
+                                Ok((path, format, source)) => Message::Opened(path, format, source),
                                 Err(error) => Message::Failed(error.to_string()),
                             },
                             Err(()) => Message::Failed(fl!("not-a-file")),
@@ -1213,10 +1206,8 @@ impl cosmic::Application for App {
                         Ok(compiled) => {
                             find.error = None;
                             find.hits = search::find(doc.state.doc(), &compiled);
-                            find.current = search::next_from(
-                                &find.hits,
-                                doc.state.selection().from(),
-                            );
+                            find.current =
+                                search::next_from(&find.hits, doc.state.selection().from());
                         }
                         Err(error) => {
                             find.error = Some(error.to_string());
@@ -1286,8 +1277,7 @@ impl cosmic::Application for App {
                 let Ok(query) = Query::new(&find.query, find.matching) else {
                     return Task::none();
                 };
-                if let Some(tr) =
-                    search::replace_all(&self.doc().state, &query, &find.replacement)
+                if let Some(tr) = search::replace_all(&self.doc().state, &query, &find.replacement)
                 {
                     self.apply(tr);
                     let text = find.query.clone();
@@ -1317,8 +1307,10 @@ impl cosmic::Application for App {
                 self.core.window.show_context = false;
             }
             Message::SetTextSize(size) => {
-                self.config.text_size =
-                    size.clamp(crate::config::MINIMUM_TEXT_SIZE, crate::config::MAXIMUM_TEXT_SIZE);
+                self.config.text_size = size.clamp(
+                    crate::config::MINIMUM_TEXT_SIZE,
+                    crate::config::MAXIMUM_TEXT_SIZE,
+                );
                 self.write_config();
             }
             Message::SetCaret(shape) => {
@@ -1368,8 +1360,8 @@ impl cosmic::Application for App {
 
             Message::OpenFolder => {
                 return cosmic::task::future(async {
-                    let dialog = cosmic::dialog::file_chooser::open::Dialog::new()
-                        .title(fl!("open-folder"));
+                    let dialog =
+                        cosmic::dialog::file_chooser::open::Dialog::new().title(fl!("open-folder"));
                     match dialog.open_folder().await {
                         Ok(response) => match response.url().to_file_path() {
                             Ok(path) => Message::FolderOpened(path),

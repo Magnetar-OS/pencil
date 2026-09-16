@@ -6,6 +6,12 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Packages are built. The v1.0.1 release stopped at the pipeline's formatting
+  check before producing any, so it has no downloads; this is the first
+  Pencil release with packages.
+
 ## [1.0.1] - 2026-09-16
 
 ### Added
