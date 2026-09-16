@@ -1,0 +1,31 @@
+# Changelog
+
+All notable changes to Pencil are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
+follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+
+- Packages. Pencil is built as a `.deb`, `.rpm` and Arch package on every
+  release and published to the `[magnetar]` pacman repository. v1.0.0 was
+  tagged without a release pipeline, so this is the first version anyone can
+  install without building it.
+
+## [1.0.0] - 2026-09-10
+
+First release.
+
+### Added
+
+- Opens and saves Markdown, MDC, MDX, HTML and plain text, as one document
+  model rather than a text buffer.
+- Formatting from the keyboard, a toolbar, or Markdown shortcuts as you type.
+- Find and replace — loose, case-sensitive, whole-word or regular expression.
+- A heading outline in the sidebar, tabs, a project sidebar with git status,
+  and code blocks coloured by language.
+- Spell checking with corrections in the right-click menu, the clipboard from
+  that menu, printing, a second window, folder search and Vim keys.
+- An unsaved-changes guard, zoom, recent files, appearance settings and
+  document statistics.
