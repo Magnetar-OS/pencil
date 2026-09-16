@@ -6,6 +6,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-16
+
 ### Added
 
 - Packages. Pencil is built as a `.deb`, `.rpm` and Arch package on every
@@ -29,3 +31,7 @@ First release.
   that menu, printing, a second window, folder search and Vim keys.
 - An unsaved-changes guard, zoom, recent files, appearance settings and
   document statistics.
+
+[Unreleased]: https://github.com/Magnetar-OS/pencil/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/Magnetar-OS/pencil/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/Magnetar-OS/pencil/releases/tag/v1.0.0

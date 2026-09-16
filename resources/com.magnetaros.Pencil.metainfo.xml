@@ -71,7 +71,7 @@
   </requires>
 
   <releases>
-    <release version="0.1.0" date="2026-09-10"> <!-- x-release-kit-version-date -->
+    <release version="1.0.1" date="2026-09-16"> <!-- x-release-kit-version-date -->
       <description>
         <p>The first release.</p>
       </description>
