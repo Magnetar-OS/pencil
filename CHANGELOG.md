@@ -8,9 +8,9 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.1.0] - 2026-09-22
 
-### Dependencies
+### Changed
 
-- **deps:** update accesskit and related packages to specific revisions ([178a547](https://github.com/Magnetar-OS/pencil/commit/178a547))
+- Rebuilt against the current COSMIC libraries (libcosmic `03c8f93`).
 
 ## [1.0.2] - 2026-09-16
 
