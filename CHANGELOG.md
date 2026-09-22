@@ -6,6 +6,11 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Pencil appears once in the applications menu, under Office. It also claimed
+  Utility, so COSMIC's app library showed it in two folders.
+
 ## [1.1.0] - 2026-09-22
 
 ### Changed

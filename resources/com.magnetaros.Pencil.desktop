@@ -2,7 +2,7 @@
 Name=Pencil
 GenericName=Text Editor
 Comment=Write and format documents
-Categories=Office;WordProcessor;TextEditor;Utility;
+Categories=COSMIC;Office;WordProcessor;
 Exec=pencil %f
 Icon=com.magnetaros.Pencil
 Terminal=false
