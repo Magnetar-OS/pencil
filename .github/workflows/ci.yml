@@ -1,0 +1,48 @@
+# The gate `just check-all` implies, run on shared runners. The toolchain
+# comes from rust-toolchain.toml — the workflow deliberately passes none, per
+# the ecosystem convention, so a bump there is a bump everywhere at once.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: metadata, fmt, clippy, tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: System libraries the build needs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev pkg-config \
+            desktop-file-utils appstream
+
+      # rustup reads rust-toolchain.toml on the first cargo invocation and
+      # installs the pinned channel with its components. No toolchain action
+      # needed, and none wanted: an action pinning its own default would
+      # silently override the file.
+      - name: Show the pinned toolchain
+        run: rustup show
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Not the apt package: noble's just predates `home_directory()`, which
+      # the justfile uses, and fails to parse the whole file before running
+      # any recipe.
+      - uses: extractions/setup-just@v4
+
+      # Everything the justfile's check-all runs, in the order that fails
+      # cheapest first: metadata validation, formatting, clippy, tests.
+      # `--no-net` because a pull request from a fork cannot be blocked on
+      # URLs that only exist after merge; the networked pass belongs to a
+      # scheduled run, not to review.
+      - name: check-all
+        run: just check-all
