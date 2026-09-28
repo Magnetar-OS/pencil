@@ -222,19 +222,33 @@ fn git_status(root: &Path) -> BTreeMap<PathBuf, Status> {
         return BTreeMap::new();
     }
 
+    parse_status(root, &output.stdout)
+}
+
+/// Reads `git status --porcelain -z` output into statuses by absolute path.
+///
+/// NUL-separated, each record `XY <path>`. NUL rather than newlines because a
+/// filename may contain one and git will not quote it in this mode. A rename
+/// or a copy (`R` or `C` in either column) is followed by one more record,
+/// the path it came from, with no flags of its own; it is skipped rather than
+/// read as `XY <path>`, which would take the first two bytes of a filename
+/// for flags.
+fn parse_status(root: &Path, output: &[u8]) -> BTreeMap<PathBuf, Status> {
     let mut statuses = BTreeMap::new();
-    // NUL-separated, each record `XY <path>`. NUL rather than newlines because
-    // a filename may contain one and git will not quote it in this mode.
-    for record in output.stdout.split(|b| *b == 0) {
+    let mut records = output.split(|b| *b == 0);
+    while let Some(record) = records.next() {
         if record.len() < 4 {
             continue;
         }
-        let Ok(record) = std::str::from_utf8(record) else {
+        let (flags, path) = record.split_at(2);
+        if flags.iter().any(|flag| matches!(flag, b'R' | b'C')) {
+            records.next();
+        }
+        let Ok(path) = std::str::from_utf8(path) else {
             continue;
         };
-        let (flags, path) = record.split_at(2);
         let path = root.join(path.trim_start());
-        let status = match flags.as_bytes() {
+        let status = match flags {
             [b'?', b'?'] => Status::Untracked,
             [b' ', _] => Status::Modified,
             _ => Status::Staged,
@@ -345,5 +359,37 @@ fn search_file(path: &Path, query: &Query, hits: &mut Vec<Hit>) {
                 return;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A rename is two records, and the second is the old path with no
+    /// flags. Read as a record of its own, `old.md` became the flags `ol` on
+    /// a file called `d.md`.
+    #[test]
+    fn a_rename_marks_the_new_path_and_nothing_made_of_the_old_one() {
+        let root = Path::new("/project");
+        let statuses = parse_status(root, b"R  notes/new.md\0notes/old.md\0 M other.md\0");
+
+        assert_eq!(
+            statuses.get(Path::new("/project/notes/new.md")),
+            Some(&Status::Staged)
+        );
+        assert_eq!(
+            statuses.get(Path::new("/project/other.md")),
+            Some(&Status::Modified)
+        );
+        assert_eq!(
+            statuses.keys().collect::<Vec<_>>(),
+            [
+                Path::new("/project/notes"),
+                Path::new("/project/notes/new.md"),
+                Path::new("/project/other.md"),
+            ],
+            "a path was made out of the rename's old name"
+        );
     }
 }
