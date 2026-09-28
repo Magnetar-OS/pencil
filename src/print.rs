@@ -751,38 +751,81 @@ fn embed(
 ///
 /// The portal takes a file descriptor rather than a path, so that a sandboxed
 /// application can only print what it already has open. The file behind the
-/// descriptor is unlinked as soon as it is opened: the portal reads through
+/// descriptor is unlinked as soon as it is written: the portal reads through
 /// the descriptor it was handed, and a temporary file left on disk after a
-/// print is a temporary file nobody remembers to delete.
+/// print is a temporary file nobody remembers to delete. Each print gets a
+/// file of its own, created fresh, so two prints in quick succession cannot
+/// write over each other's.
 ///
 /// # Errors
 ///
 /// The message to show when the file could not be written or the portal
-/// refused. A dialog the user cancelled is not an error.
+/// refused or failed. A dialog the user cancelled is not an error.
 pub async fn send(pdf: Vec<u8>, title: &str) -> Result<(), String> {
     use ashpd::desktop::print::PrintProxy;
+    use std::io::{Seek as _, Write as _};
+    use std::sync::atomic::{AtomicU64, Ordering};
 
-    let path = std::env::temp_dir().join(format!("pencil-{}.pdf", std::process::id()));
-    tokio::fs::write(&path, pdf)
-        .await
-        .map_err(|error| format!("{}: {error}", path.display()))?;
-    let file =
-        std::fs::File::open(&path).map_err(|error| format!("{}: {error}", path.display()))?;
-    let _ = std::fs::remove_file(&path);
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let path = std::env::temp_dir().join(format!(
+        "pencil-{}-{}.pdf",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let failed = |error: std::io::Error| format!("{}: {error}", path.display());
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .map_err(failed)?;
+    std::fs::remove_file(&path).map_err(failed)?;
+    file.write_all(&pdf).map_err(failed)?;
+    file.rewind().map_err(failed)?;
 
     let proxy = PrintProxy::new().await.map_err(|error| error.to_string())?;
     // No window identifier: getting one for a Wayland surface means exporting
     // the surface through the compositor, and the dialog is perfectly usable
     // unparented. No token either, which is what asks the portal to show its
     // own print dialog rather than reusing a previous answer.
-    // A `Response` error is the user closing the dialog. Nothing happened,
-    // which is what they asked for.
-    let cancelled_or_failed = |error: ashpd::Error| match error {
-        ashpd::Error::Response(_) => Ok(()),
-        error => Err(error.to_string()),
+    let result = match proxy.print(None, title, &file, None, true).await {
+        Ok(request) => request.response(),
+        Err(error) => Err(error),
     };
-    match proxy.print(None, title, &file, None, true).await {
-        Ok(request) => request.response().or_else(cancelled_or_failed),
-        Err(error) => cancelled_or_failed(error),
+    outcome(result)
+}
+
+/// What a print request's answer means to the user.
+///
+/// The portal answers a closed dialog and a failed print with the same
+/// `Response` error, told apart only by its code: a cancel is an answer and
+/// says nothing, anything else is a print that did not happen and says so.
+fn outcome(result: Result<(), ashpd::Error>) -> Result<(), String> {
+    use ashpd::desktop::ResponseError;
+
+    match result {
+        Ok(()) | Err(ashpd::Error::Response(ResponseError::Cancelled)) => Ok(()),
+        Err(ashpd::Error::Response(ResponseError::Other)) => Err(crate::fl!("print-failed")),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ashpd::desktop::ResponseError;
+
+    #[test]
+    fn a_cancelled_print_dialog_is_not_an_error() {
+        assert_eq!(
+            outcome(Err(ashpd::Error::Response(ResponseError::Cancelled))),
+            Ok(())
+        );
+    }
+
+    /// The portal saying the print failed is not a cancel: it was silent.
+    #[test]
+    fn a_print_the_portal_reports_failed_is_an_error() {
+        assert!(outcome(Err(ashpd::Error::Response(ResponseError::Other))).is_err());
     }
 }

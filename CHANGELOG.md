@@ -13,6 +13,9 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A print the desktop's print service fails is reported instead of passing
+  silently as if the dialog had been cancelled, and two prints started in
+  quick succession no longer share one temporary file.
 - A settings change made in another Pencil window now takes effect here too:
   turning spell checking off or on, changing its language, learning a word, or
   changing the theme. Only the change arrived before; the dictionary and theme

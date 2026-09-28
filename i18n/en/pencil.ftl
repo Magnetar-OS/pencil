@@ -124,6 +124,7 @@ find-in-project = Search the folder
 results-truncated = Stopped at { $total } matches
 new-window = New window
 print = Print
+print-failed = The print service could not print this document.
 application = Application
 editing = Editing
 keys = Keys
