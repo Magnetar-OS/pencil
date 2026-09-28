@@ -96,8 +96,6 @@ pub enum Message {
 
     ConfigChanged(Config),
 
-    /// The user asked for something that would discard unsaved work.
-    Confirm(Pending),
     /// Save first, then do it.
     ConfirmSave,
     /// Do it anyway.
@@ -145,9 +143,6 @@ pub enum Message {
 /// What is waiting on the unsaved-changes question.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Pending {
-    New,
-    Open,
-    OpenPath(PathBuf),
     CloseTab(segmented_button::Entity),
     /// Closing the window. The tabs the user has already chosen to discard
     /// are listed, so a later Cancel leaves them unsaved rather than marked
@@ -325,9 +320,6 @@ impl App {
     /// Carries on with what the unsaved-changes question was blocking.
     fn resume(&mut self, pending: Pending) -> Task<Message> {
         match pending {
-            Pending::New => self.update(Message::New),
-            Pending::Open => self.update(Message::Open),
-            Pending::OpenPath(path) => open_path(path),
             Pending::CloseTab(id) => {
                 self.close_tab(id);
                 Task::none()
@@ -794,12 +786,19 @@ impl cosmic::Application for App {
             )
             .into()
         };
-        vec![
-            button(
-                "folder-open-symbolic",
-                fl!("open-folder"),
-                Message::OpenFolder,
-            ),
+        let mut buttons = vec![button(
+            "folder-open-symbolic",
+            fl!("open-folder"),
+            Message::OpenFolder,
+        )];
+        if self.project.is_some() {
+            buttons.push(button(
+                "list-remove-symbolic",
+                fl!("close-folder"),
+                Message::CloseFolder,
+            ));
+        }
+        buttons.extend([
             button(
                 if self.sidebar == Sidebar::Project {
                     "view-list-symbolic"
@@ -844,7 +843,8 @@ impl cosmic::Application for App {
                 fl!("about"),
                 Message::OpenContext(ContextPage::About),
             ),
-        ]
+        ]);
+        buttons
     }
 
     fn nav_model(&self) -> Option<&nav_bar::Model> {
@@ -933,7 +933,7 @@ impl cosmic::Application for App {
                     )
                 }
             }
-            _ => fl!("unsaved-body"),
+            Pending::CloseTab(_) => fl!("unsaved-body"),
         };
         Some(
             widget::dialog()
@@ -1182,7 +1182,6 @@ impl cosmic::Application for App {
                 }
             }
 
-            Message::Confirm(pending) => self.pending = Some(pending),
             Message::ConfirmCancel => self.pending = None,
             Message::ConfirmSave => {
                 // Save, and let the save's own completion carry on with what
@@ -2055,5 +2054,16 @@ mod tests {
         elsewhere.spell_check = false;
         let _ = app.update(Message::ConfigChanged(elsewhere));
         assert!(app.speller.is_none(), "the speller outlived the setting");
+    }
+
+    /// An open folder can be closed: the header offers it once there is one.
+    #[test]
+    fn an_open_folder_has_a_close_button() {
+        let mut app = app();
+        let without = cosmic::Application::header_end(&app).len();
+        app.project = Some(Project::open(std::env::temp_dir()));
+        assert_eq!(cosmic::Application::header_end(&app).len(), without + 1);
+        let _ = app.update(Message::CloseFolder);
+        assert!(app.project.is_none());
     }
 }

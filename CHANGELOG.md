@@ -6,6 +6,11 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- A Close folder button in the header while a folder is open. There was no
+  way to leave a project once one was open.
+
 ### Changed
 
 - Pencil appears once in the applications menu, under Office. It also claimed
