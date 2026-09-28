@@ -62,6 +62,8 @@ pub enum Message {
     /// A write finished: which tab it was, where and how it was written, and
     /// the document exactly as it went to disk.
     Saved(segmented_button::Entity, PathBuf, Format, Node),
+    /// The Save As dialog was dismissed.
+    SaveCancelled,
     Failed(String),
     DismissError,
 
@@ -244,8 +246,9 @@ pub struct App {
     context: Option<ContextPage>,
     /// What the unsaved-changes dialog is asking about.
     pending: Option<Pending>,
-    /// What to carry on with once a save the user asked for completes.
-    after_save: Option<Pending>,
+    /// What to carry on with once a save the user asked for completes, and
+    /// the tab whose save that is.
+    after_save: Option<(segmented_button::Entity, Pending)>,
     /// The Vim mode, for the status bar. The widget owns the state machine;
     /// this is the last thing it said.
     mode: nib_model::vim::Mode,
@@ -1091,8 +1094,8 @@ impl cosmic::Application for App {
             Message::ConfirmSave => {
                 // Save, and let the save's own completion carry on with what
                 // was waiting.
-                let pending = self.pending.take();
-                self.after_save = pending;
+                let tab = self.tabs.active();
+                self.after_save = self.pending.take().map(|pending| (tab, pending));
                 return self.update(Message::Save);
             }
             Message::ConfirmDiscard => {
@@ -1167,7 +1170,7 @@ impl cosmic::Application for App {
                             None => Message::Failed(fl!("not-a-file")),
                         },
                         // A cancelled dialog is not an error; it is an answer.
-                        Err(_) => Message::DismissError,
+                        Err(_) => Message::SaveCancelled,
                     }
                 });
             }
@@ -1189,12 +1192,30 @@ impl cosmic::Application for App {
                     project.refresh_status();
                 }
                 self.rebuild_nav();
-                // A save that something was waiting on carries on with it.
-                if let Some(pending) = self.after_save.take() {
-                    return self.resume(pending);
+                // A save that something was waiting on carries on with it —
+                // only if it was that tab's save, and it left nothing unsaved.
+                let clean = self
+                    .tabs
+                    .data::<Document>(tab)
+                    .is_some_and(|document| !document.dirty);
+                if self
+                    .after_save
+                    .as_ref()
+                    .is_some_and(|(waiting, _)| *waiting == tab)
+                {
+                    let (_, pending) = self.after_save.take().expect("just checked");
+                    if clean {
+                        return self.resume(pending);
+                    }
                 }
             }
-            Message::Failed(message) => self.error = Some(message),
+            // A save that did not happen releases whatever was waiting on it;
+            // carrying on later, after some other save, would discard work.
+            Message::SaveCancelled => self.after_save = None,
+            Message::Failed(message) => {
+                self.after_save = None;
+                self.error = Some(message);
+            }
             Message::DismissError => self.error = None,
 
             Message::ToggleFind => {
@@ -1770,5 +1791,35 @@ mod tests {
     /// The document of a tab, as a save would have written it.
     fn written(app: &App, tab: segmented_button::Entity) -> Node {
         app.tabs.data::<Document>(tab).unwrap().state.doc().clone()
+    }
+
+    /// Save-before-close whose dialog is cancelled must not leave the close
+    /// armed: the next unrelated save would carry it out, discarding the tab.
+    #[test]
+    fn a_cancelled_save_before_closing_does_not_close_the_tab_later() {
+        let mut app = app();
+        edited(&mut app, None);
+        let untitled = app.tabs.active();
+        app.add_tab(Document::empty(&app.schema.clone()));
+        edited(&mut app, Some("/tmp/pencil-b.md"));
+        let other = app.tabs.active();
+
+        let _ = app.update(Message::TabClose(untitled));
+        let _ = app.update(Message::ConfirmSave);
+        // The Save As dialog for the untitled tab is dismissed.
+        let _ = app.update(Message::SaveCancelled);
+
+        let _ = app.update(Message::TabActivate(other));
+        let _ = app.update(Message::Saved(
+            other,
+            PathBuf::from("/tmp/pencil-b.md"),
+            Format::Markdown,
+            written(&app, other),
+        ));
+
+        assert!(
+            app.tabs.data::<Document>(untitled).is_some(),
+            "the untitled tab was closed by an unrelated save"
+        );
     }
 }

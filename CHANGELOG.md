@@ -17,6 +17,9 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   switched to as saved, or gives it the saved file's path; a later Save there
   would have overwritten the other file.
 - Text typed while a save is being written stays marked unsaved.
+- Choosing "Save" in the close-tab dialog and then cancelling the file dialog
+  no longer closes that tab, unsaved, the next time any other document is
+  saved.
 - A failed Save As leaves the document's name and format as they were.
 - Saving keeps the file's permissions: a `0600` note was rewritten with the
   default `0644`. Saving a file opened through a symlink updates the file the
