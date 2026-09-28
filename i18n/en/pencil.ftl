@@ -78,6 +78,10 @@ clear-recent = Clear
 # Unsaved changes
 unsaved-title = Save changes to { $name }?
 unsaved-body = If you do not save, the changes since you last saved will be lost.
+unsaved-others = { $count ->
+    [one] One other document also has unsaved changes.
+   *[other] { $count } other documents also have unsaved changes.
+}
 save-changes = Save
 discard-changes = Discard
 cancel = Cancel

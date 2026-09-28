@@ -20,7 +20,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(PathBuf::from)
         .filter(|p| p.exists());
 
+    // Closing the window is a request the application answers, not a close:
+    // unsaved tabs are asked about first (`App::quit`).
     let settings = cosmic::app::Settings::default()
+        .exit_on_close(false)
         .size(cosmic::iced::Size::new(1000.0, 760.0))
         .size_limits(
             cosmic::iced::Limits::NONE

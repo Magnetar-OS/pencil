@@ -13,6 +13,9 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Closing the window with unsaved documents asks about each one — Save,
+  Discard or Cancel — instead of closing and losing them. This covers the
+  close button and the desktop's close shortcut.
 - A save that finishes after you switch tabs no longer marks the tab you
   switched to as saved, or gives it the saved file's path; a later Save there
   would have overwritten the other file.

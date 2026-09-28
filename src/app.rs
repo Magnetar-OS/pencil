@@ -104,6 +104,9 @@ pub enum Message {
     ConfirmDiscard,
     /// Do nothing after all.
     ConfirmCancel,
+    /// The window was asked to close, by its own close button or by the
+    /// desktop. Unsaved tabs are asked about first.
+    CloseRequested,
 
     ZoomIn,
     ZoomOut,
@@ -146,6 +149,10 @@ pub enum Pending {
     Open,
     OpenPath(PathBuf),
     CloseTab(segmented_button::Entity),
+    /// Closing the window. The tabs the user has already chosen to discard
+    /// are listed, so a later Cancel leaves them unsaved rather than marked
+    /// clean.
+    Quit(Vec<segmented_button::Entity>),
 }
 
 /// The panes that open in the context drawer.
@@ -322,7 +329,37 @@ impl App {
                 self.close_tab(id);
                 Task::none()
             }
+            Pending::Quit(discarded) => self.quit(discarded),
         }
+    }
+
+    /// The next unsaved tab the user has not already chosen to discard.
+    fn next_unsaved(
+        &self,
+        discarded: &[segmented_button::Entity],
+    ) -> Option<segmented_button::Entity> {
+        self.tabs.iter().find(|id| {
+            !discarded.contains(id)
+                && self
+                    .tabs
+                    .data::<Document>(*id)
+                    .is_some_and(|document| document.dirty)
+        })
+    }
+
+    /// Closes the window, asking about each unsaved tab first.
+    ///
+    /// One tab at a time, with the same Save / Discard / Cancel as closing a
+    /// tab: an untitled document needs its own Save As, and a list of names
+    /// with one "Save all" button cannot give it one. Cancel at any point
+    /// keeps the window and every tab as it was.
+    fn quit(&mut self, discarded: Vec<segmented_button::Entity>) -> Task<Message> {
+        let Some(id) = self.next_unsaved(&discarded) else {
+            return cosmic::iced::exit();
+        };
+        let task = self.update(Message::TabActivate(id));
+        self.pending = Some(Pending::Quit(discarded));
+        task
     }
 
     /// Removes a tab and activates a neighbour.
@@ -800,6 +837,15 @@ impl cosmic::Application for App {
         self.config.outline.then_some(&self.nav)
     }
 
+    /// The header bar's close button.
+    ///
+    /// libcosmic closes the window unless this returns a message, so it always
+    /// does: [`Message::CloseRequested`] exits straight away when nothing is
+    /// unsaved.
+    fn on_app_exit(&mut self) -> Option<Message> {
+        Some(Message::CloseRequested)
+    }
+
     fn on_nav_select(&mut self, id: nav_bar::Id) -> Task<Message> {
         self.nav.activate(id);
         match self.nav.data::<NavTarget>(id).copied() {
@@ -853,11 +899,38 @@ impl cosmic::Application for App {
 
     fn dialog(&self) -> Option<Element<'_, Message>> {
         let pending = self.pending.as_ref()?;
-        let _ = pending;
+        // Closing the window says how many more questions are coming.
+        let body = match pending {
+            Pending::Quit(discarded) => {
+                let active = self.tabs.active();
+                let others = self
+                    .tabs
+                    .iter()
+                    .filter(|id| {
+                        *id != active
+                            && !discarded.contains(id)
+                            && self
+                                .tabs
+                                .data::<Document>(*id)
+                                .is_some_and(|document| document.dirty)
+                    })
+                    .count();
+                if others == 0 {
+                    fl!("unsaved-body")
+                } else {
+                    format!(
+                        "{}\n\n{}",
+                        fl!("unsaved-body"),
+                        fl!("unsaved-others", count = others)
+                    )
+                }
+            }
+            _ => fl!("unsaved-body"),
+        };
         Some(
             widget::dialog()
                 .title(fl!("unsaved-title", name = self.doc().title()))
-                .body(fl!("unsaved-body"))
+                .body(body)
                 .primary_action(
                     widget::button::suggested(fl!("save-changes")).on_press(Message::ConfirmSave),
                 )
@@ -883,6 +956,10 @@ impl cosmic::Application for App {
                 Config::VERSION,
             )
             .map(|update| Message::ConfigChanged(update.config)),
+            // The desktop asking the window to close (a keyboard shortcut, the
+            // window menu). `exit_on_close(false)` in `main` turns that into a
+            // request rather than a close.
+            cosmic::iced::window::close_requests().map(|_| Message::CloseRequested),
             // Zoom and the file shortcuts are the application's, not the
             // document's: the editor's keymap produces transactions, and none
             // of these is one.
@@ -1102,9 +1179,17 @@ impl cosmic::Application for App {
                 let Some(pending) = self.pending.take() else {
                     return Task::none();
                 };
+                // Closing the window remembers the choice instead of marking
+                // the tab clean: a Cancel on a later tab keeps this one's
+                // changes, and they must still count as unsaved.
+                if let Pending::Quit(mut discarded) = pending {
+                    discarded.push(self.tabs.active());
+                    return self.quit(discarded);
+                }
                 self.doc_mut().dirty = false;
                 return self.resume(pending);
             }
+            Message::CloseRequested => return self.quit(Vec::new()),
 
             Message::ZoomIn => {
                 let size = self.config.text_size.saturating_add(1);
@@ -1821,5 +1906,86 @@ mod tests {
             app.tabs.data::<Document>(untitled).is_some(),
             "the untitled tab was closed by an unrelated save"
         );
+    }
+
+    /// Closing the window asks about each unsaved tab in turn. A Discard
+    /// moves on to the next; a Cancel keeps everything, and a tab discarded
+    /// earlier in that round still counts as unsaved.
+    #[test]
+    fn closing_the_window_asks_about_each_unsaved_tab() {
+        let mut app = app();
+        edited(&mut app, Some("/tmp/pencil-e.md"));
+        let first = app.tabs.active();
+        app.add_tab(Document::empty(&app.schema.clone()));
+        let clean = app.tabs.active();
+        app.add_tab(Document::empty(&app.schema.clone()));
+        edited(&mut app, None);
+        let second = app.tabs.active();
+
+        let _ = app.update(Message::CloseRequested);
+        assert_eq!(app.pending, Some(Pending::Quit(Vec::new())));
+        assert_eq!(
+            app.tabs.active(),
+            first,
+            "the first unsaved tab is asked about"
+        );
+
+        let _ = app.update(Message::ConfirmDiscard);
+        assert_eq!(app.pending, Some(Pending::Quit(vec![first])));
+        assert_eq!(app.tabs.active(), second, "then the next one");
+
+        let _ = app.update(Message::ConfirmCancel);
+        assert_eq!(app.pending, None);
+        assert_eq!(app.tabs.iter().count(), 3, "a cancelled close closed tabs");
+        assert!(
+            app.tabs.data::<Document>(first).unwrap().dirty,
+            "a tab discarded before the Cancel was marked saved"
+        );
+        assert!(!app.tabs.data::<Document>(clean).unwrap().dirty);
+    }
+
+    /// Saving from the close dialog moves on to the next unsaved tab once the
+    /// save has landed.
+    #[test]
+    fn a_save_while_closing_the_window_moves_on_to_the_next_tab() {
+        let mut app = app();
+        edited(&mut app, Some("/tmp/pencil-f.md"));
+        let first = app.tabs.active();
+        app.add_tab(Document::empty(&app.schema.clone()));
+        edited(&mut app, None);
+        let second = app.tabs.active();
+
+        let _ = app.update(Message::CloseRequested);
+        let _ = app.update(Message::ConfirmSave);
+        assert_eq!(app.pending, None, "the question was answered");
+        let _ = app.update(Message::Saved(
+            first,
+            PathBuf::from("/tmp/pencil-f.md"),
+            Format::Markdown,
+            written(&app, first),
+        ));
+
+        assert_eq!(app.pending, Some(Pending::Quit(Vec::new())));
+        assert_eq!(app.tabs.active(), second);
+    }
+
+    /// Nothing unsaved: the window closes without a question.
+    #[test]
+    fn closing_the_window_with_nothing_unsaved_asks_nothing() {
+        let mut app = app();
+        app.add_tab(Document::empty(&app.schema.clone()));
+        let _ = app.update(Message::CloseRequested);
+        assert_eq!(app.pending, None);
+    }
+
+    /// The header bar's close button goes through the same question: left
+    /// to libcosmic, it closes the window outright.
+    #[test]
+    fn the_close_button_is_a_request_the_app_answers() {
+        let mut app = app();
+        assert!(matches!(
+            cosmic::Application::on_app_exit(&mut app),
+            Some(Message::CloseRequested)
+        ));
     }
 }
