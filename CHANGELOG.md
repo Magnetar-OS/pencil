@@ -18,6 +18,9 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `pencil notes.md` for a file that does not exist yet starts a document by
+  that name, saved there on the first Save, instead of an untitled one. A
+  relative path is remembered in Open Recent as the file it named.
 - A print the desktop's print service fails is reported instead of passing
   silently as if the dialog had been cancelled, and two prints started in
   quick succession no longer share one temporary file.

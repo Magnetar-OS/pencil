@@ -12,13 +12,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // use.
     i18n::init(&i18n_embed::DesktopLanguageRequester::requested_languages());
 
-    // A file named on the command line, if there is one. Everything else is
-    // ignored rather than refused: a desktop launcher passes a URL, and a
-    // shell passes whatever it was given.
+    // A file or folder named on the command line, if there is one. The
+    // desktop entry passes a local path (`%f`). Made absolute here, so the
+    // recent-files list and a second window started from this one name the
+    // same file whatever directory they run in. A path that does not exist
+    // yet is a new document to be saved there.
     let path = std::env::args_os()
         .nth(1)
         .map(PathBuf::from)
-        .filter(|p| p.exists());
+        .map(|path| std::path::absolute(&path).unwrap_or(path));
 
     // Closing the window is a request the application answers, not a close:
     // unsaved tabs are asked about first (`App::quit`).

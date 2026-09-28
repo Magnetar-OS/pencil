@@ -744,6 +744,19 @@ impl cosmic::Application for App {
             // A folder rather than a file: `pencil ~/notes` opens the folder,
             // which is also how a new window inherits the one it came from.
             Some(path) if path.is_dir() => cosmic::task::message(Message::FolderOpened(path)),
+            // A file that is not there yet, the way `vim notes.md` starts
+            // one: an empty document already named, written there on the
+            // first Save.
+            Some(path) if !path.exists() => {
+                let format = Format::of(&path);
+                let first = app.tabs.active();
+                if let Some(document) = app.tabs.data_mut::<Document>(first) {
+                    document.path = Some(path);
+                    document.format = format;
+                }
+                app.retitle();
+                Task::none()
+            }
             Some(path) => cosmic::task::future(async move {
                 match crate::document::read(path).await {
                     Ok((path, format, source)) => Message::Opened(path, format, source),
@@ -2065,5 +2078,18 @@ mod tests {
         assert_eq!(cosmic::Application::header_end(&app).len(), without + 1);
         let _ = app.update(Message::CloseFolder);
         assert!(app.project.is_none());
+    }
+
+    /// `pencil new.md` for a file that does not exist yet starts a document
+    /// by that name, instead of an untitled one.
+    #[test]
+    fn a_file_named_on_the_command_line_that_is_not_there_yet_is_started() {
+        let path = std::env::temp_dir().join("pencil-not-there-yet.html");
+        let _ = std::fs::remove_file(&path);
+        let (mut app, _) = <App as cosmic::Application>::init(Core::default(), Some(path.clone()));
+        app.config_handler = None;
+        assert_eq!(app.doc().path.as_deref(), Some(path.as_path()));
+        assert_eq!(app.doc().format, Format::Html);
+        assert!(!app.doc().dirty);
     }
 }
