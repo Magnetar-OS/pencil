@@ -13,6 +13,9 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Opening a file that is already open — from the Open dialog, Open Recent or
+  the command line — switches to its tab instead of opening a second copy
+  that would save over the first.
 - Closing the window with unsaved documents asks about each one — Save,
   Discard or Cancel — instead of closing and losing them. This covers the
   close button and the desktop's close shortcut.

@@ -577,6 +577,16 @@ impl App {
         }
     }
 
+    /// The tab that already holds the file at `path`, if one does.
+    fn tab_for(&self, path: &std::path::Path) -> Option<segmented_button::Entity> {
+        self.tabs.iter().find(|id| {
+            self.tabs
+                .data::<Document>(*id)
+                .and_then(|d| d.path.as_deref())
+                == Some(path)
+        })
+    }
+
     /// Opens a file, reusing the tab when the one showing is empty and
     /// untouched — a new window should not leave a blank tab behind.
     fn load(&mut self, path: PathBuf, format: Format, source: &str) {
@@ -863,14 +873,8 @@ impl cosmic::Application for App {
                     return Task::none();
                 }
                 let path = entry.path.clone();
-                // A file already open is switched to rather than opened twice.
-                let existing = self.tabs.iter().find(|id| {
-                    self.tabs
-                        .data::<Document>(*id)
-                        .and_then(|d| d.path.as_deref())
-                        == Some(path.as_path())
-                });
-                match existing {
+                // A file already open is switched to rather than read again.
+                match self.tab_for(&path) {
                     Some(id) => self.update(Message::TabActivate(id)),
                     None => open_path(path),
                 }
@@ -1160,7 +1164,15 @@ impl cosmic::Application for App {
                     .take()
                     .filter(|(waiting, _)| waiting == &path)
                     .map(|(_, ordinal)| ordinal);
-                self.load(path, format, &source);
+                // A file already open is switched to, not opened a second
+                // time: two tabs on one file save over each other. The open
+                // tab keeps its unsaved edits rather than being re-read.
+                match self.tab_for(&path) {
+                    Some(id) => {
+                        let _ = self.update(Message::TabActivate(id));
+                    }
+                    None => self.load(path, format, &source),
+                }
                 if let Some(ordinal) = jump {
                     self.land_on(ordinal);
                 }
@@ -1577,13 +1589,7 @@ impl cosmic::Application for App {
                     ..Find::default()
                 });
 
-                let open = self.tabs.iter().find(|id| {
-                    self.tabs
-                        .data::<Document>(*id)
-                        .and_then(|d| d.path.as_deref())
-                        == Some(path.as_path())
-                });
-                let Some(id) = open else {
+                let Some(id) = self.tab_for(&path) else {
                     self.jump = Some((path.clone(), ordinal));
                     return open_path(path);
                 };
@@ -1987,5 +1993,26 @@ mod tests {
             cosmic::Application::on_app_exit(&mut app),
             Some(Message::CloseRequested)
         ));
+    }
+
+    /// Opening a file that is already open switches to its tab: two tabs on
+    /// one file save over each other.
+    #[test]
+    fn opening_a_file_already_open_switches_to_its_tab() {
+        let mut app = app();
+        let a = PathBuf::from("/tmp/pencil-g.md");
+        let b = PathBuf::from("/tmp/pencil-h.md");
+        let _ = app.update(Message::Opened(
+            a.clone(),
+            Format::Markdown,
+            "# A\n".to_owned(),
+        ));
+        let first = app.tabs.active();
+        let _ = app.update(Message::Opened(b, Format::Markdown, "# B\n".to_owned()));
+        edited(&mut app, Some("/tmp/pencil-h.md"));
+
+        let _ = app.update(Message::Opened(a, Format::Markdown, "# A\n".to_owned()));
+        assert_eq!(app.tabs.iter().count(), 2, "the file was opened twice");
+        assert_eq!(app.tabs.active(), first);
     }
 }
