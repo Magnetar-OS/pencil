@@ -25,6 +25,7 @@ use nib_highlight::Highlighter;
 use nib_model::decoration::DecorationSet;
 use nib_model::input_rules::{self, InputRule};
 use nib_model::keymap::Keymap;
+use nib_model::node::Node;
 use nib_model::schema::Schema;
 use nib_model::search::{self, Heading, Matching, Query};
 use nib_model::state::{EditorState, Selection};
@@ -58,7 +59,9 @@ pub enum Message {
     /// Hand the document to the desktop's print dialog.
     Print,
     SaveTo(PathBuf, Format),
-    Saved(PathBuf),
+    /// A write finished: which tab it was, where and how it was written, and
+    /// the document exactly as it went to disk.
+    Saved(segmented_button::Entity, PathBuf, Format, Node),
     Failed(String),
     DismissError,
 
@@ -281,17 +284,18 @@ impl App {
         self.refresh();
     }
 
-    /// Keeps the tab's label in step with its document.
+    /// Keeps the active tab's label in step with its document.
     fn retitle(&mut self) {
-        let Some(id) = self
-            .tabs
-            .active_data::<Document>()
-            .map(|_| self.tabs.active())
-        else {
+        self.retitle_tab(self.tabs.active());
+    }
+
+    /// Keeps one tab's label in step with its document.
+    fn retitle_tab(&mut self, id: segmented_button::Entity) {
+        let Some(document) = self.tabs.data::<Document>(id) else {
             return;
         };
-        let title = self.doc().title();
-        let modified = if self.doc().dirty {
+        let title = document.title();
+        let modified = if document.dirty {
             format!("• {title}")
         } else {
             title
@@ -581,11 +585,18 @@ impl App {
         self.apply(tr);
     }
 
+    /// Writes the active document.
+    ///
+    /// The tab and the document as written travel with the result, because
+    /// the write is asynchronous: by the time it lands the user may have
+    /// switched tabs or typed more, and neither should be marked saved.
     fn save_to(&self, path: PathBuf, format: Format) -> Task<Message> {
-        let contents = self.converters.write(format, self.doc().state.doc());
+        let tab = self.tabs.active();
+        let written = self.doc().state.doc().clone();
+        let contents = self.converters.write(format, &written);
         cosmic::task::future(async move {
             match crate::document::write(path, contents).await {
-                Ok(path) => Message::Saved(path),
+                Ok(path) => Message::Saved(tab, path, format, written),
                 Err(error) => Message::Failed(error.to_string()),
             }
         })
@@ -1160,17 +1171,20 @@ impl cosmic::Application for App {
                     }
                 });
             }
-            Message::SaveTo(path, format) => {
-                self.doc_mut().format = format;
-                self.doc_mut().path = Some(path.clone());
-                return self.save_to(path, format);
-            }
-            Message::Saved(path) => {
+            // The document takes its new path and format when the write has
+            // succeeded, not before: a failed Save As leaves it where it was.
+            Message::SaveTo(path, format) => return self.save_to(path, format),
+            Message::Saved(tab, path, format, written) => {
                 self.remember(&path);
-                self.doc_mut().path = Some(path);
-                self.doc_mut().dirty = false;
+                if let Some(document) = self.tabs.data_mut::<Document>(tab) {
+                    document.path = Some(path);
+                    document.format = format;
+                    // Typing that happened while the write was in flight is
+                    // not on disk, so it stays unsaved.
+                    document.dirty = document.state.doc() != &written;
+                }
                 self.error = None;
-                self.retitle();
+                self.retitle_tab(tab);
                 if let Some(project) = &mut self.project {
                     project.refresh_status();
                 }
@@ -1660,5 +1674,101 @@ impl App {
             // place errors go, rather than swallowing.
             self.error = Some(format!("{errors:?}"));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An application with one empty tab, writing no settings: a test must
+    /// not rewrite the user's recent-files list.
+    fn app() -> App {
+        let (mut app, _) = <App as cosmic::Application>::init(Core::default(), None);
+        app.config_handler = None;
+        app
+    }
+
+    /// Marks the active document as edited and gives it a path.
+    fn edited(app: &mut App, path: Option<&str>) {
+        app.doc_mut().path = path.map(PathBuf::from);
+        app.doc_mut().dirty = true;
+    }
+
+    /// A save finishes after the user has moved to another tab. What it
+    /// wrote was the first tab, so the first tab is the one it cleans.
+    #[test]
+    fn a_save_marks_clean_the_tab_it_saved_not_the_one_now_showing() {
+        let mut app = app();
+        edited(&mut app, Some("/tmp/pencil-a.md"));
+        let saving = app.tabs.active();
+
+        app.add_tab(Document::empty(&app.schema.clone()));
+        edited(&mut app, None);
+        let showing = app.tabs.active();
+        assert_ne!(saving, showing);
+
+        let _ = app.update(Message::Saved(
+            saving,
+            PathBuf::from("/tmp/pencil-a.md"),
+            Format::Markdown,
+            written(&app, saving),
+        ));
+
+        let shown = app.tabs.data::<Document>(showing).unwrap();
+        assert!(shown.dirty, "the unsaved tab was marked saved");
+        assert_eq!(
+            shown.path, None,
+            "the unsaved tab took the other file's path"
+        );
+        assert!(!app.tabs.data::<Document>(saving).unwrap().dirty);
+    }
+
+    /// Typing that lands while a write is in flight is not in the file.
+    #[test]
+    fn edits_made_while_a_save_is_in_flight_stay_unsaved() {
+        let mut app = app();
+        edited(&mut app, Some("/tmp/pencil-c.md"));
+        let tab = app.tabs.active();
+        let on_disk = written(&app, tab);
+
+        let mut tr = app.doc().state.tr();
+        tr.insert_text("more").expect("text goes in at the caret");
+        App::apply(&mut app, tr);
+
+        let _ = app.update(Message::Saved(
+            tab,
+            PathBuf::from("/tmp/pencil-c.md"),
+            Format::Markdown,
+            on_disk,
+        ));
+        assert!(
+            app.doc().dirty,
+            "text typed during the save was marked saved"
+        );
+    }
+
+    /// Save As names the document only once the write has succeeded; a
+    /// failed one leaves its name and format where they were.
+    #[test]
+    fn a_save_as_that_fails_leaves_the_name_and_format_alone() {
+        let mut app = app();
+        edited(&mut app, Some("/tmp/pencil-d.md"));
+        let _ = app.update(Message::SaveTo(
+            PathBuf::from("/nonesuch/pencil-d.html"),
+            Format::Html,
+        ));
+        let _ = app.update(Message::Failed("no such folder".to_owned()));
+        assert_eq!(
+            app.doc().path.as_deref(),
+            Some(std::path::Path::new("/tmp/pencil-d.md"))
+        );
+        assert_eq!(app.doc().format, Format::Markdown);
+        assert!(app.doc().dirty);
+    }
+
+    /// The document of a tab, as a save would have written it.
+    fn written(app: &App, tab: segmented_button::Entity) -> Node {
+        app.tabs.data::<Document>(tab).unwrap().state.doc().clone()
     }
 }

@@ -13,6 +13,11 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A save that finishes after you switch tabs no longer marks the tab you
+  switched to as saved, or gives it the saved file's path; a later Save there
+  would have overwritten the other file.
+- Text typed while a save is being written stays marked unsaved.
+- A failed Save As leaves the document's name and format as they were.
 - Saving keeps the file's permissions: a `0600` note was rewritten with the
   default `0644`. Saving a file opened through a symlink updates the file the
   link points at instead of replacing the link with a copy.
