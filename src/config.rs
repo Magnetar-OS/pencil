@@ -7,7 +7,9 @@
 //! should look like when it opens, and the handful of preferences that have an
 //! argument behind them rather than a taste.
 
-use cosmic::cosmic_config::{self, CosmicConfigEntry, cosmic_config_derive::CosmicConfigEntry};
+use cosmic::cosmic_config::{
+    self, ConfigSet as _, CosmicConfigEntry, cosmic_config_derive::CosmicConfigEntry,
+};
 
 /// The smallest text size that is still text rather than a texture.
 pub const MINIMUM_TEXT_SIZE: u16 = 9;
@@ -225,6 +227,56 @@ impl Config {
         Appearance::from(self.appearance)
     }
 
+    /// Writes the settings that differ from `since`, and only those.
+    ///
+    /// Every Pencil window is a process with its own copy of the settings.
+    /// Writing the whole entry, as `write_entry` does, puts this window's copy
+    /// of *every* key on disk, so a window that changed the text size would
+    /// also write back its older recent-files list over the one another window
+    /// had just added to. Writing only what changed here leaves the rest to
+    /// whoever changed it.
+    ///
+    /// # Errors
+    ///
+    /// [`cosmic_config::Error`] when a key cannot be serialised or written.
+    pub fn write_changed(
+        &self,
+        since: &Self,
+        config: &cosmic_config::Config,
+    ) -> Result<(), cosmic_config::Error> {
+        let tx = config.transaction();
+        macro_rules! each {
+            ($($field:ident),* $(,)?) => {
+                // Destructured so that a field added to `Config` and not
+                // listed here is a compile error, not a setting that never
+                // persists.
+                let Self { $($field: _),* } = self;
+                $(
+                    if self.$field != since.$field {
+                        tx.set(stringify!($field), &self.$field)?;
+                    }
+                )*
+            };
+        }
+        each!(
+            text_size,
+            caret,
+            caret_blinks,
+            caret_glides,
+            outline,
+            measure,
+            appearance,
+            recent,
+            line_numbers,
+            wrap_code,
+            vim,
+            spell_check,
+            spell_language,
+            learnt_words,
+        );
+        tx.commit()
+    }
+
     /// Puts a path at the head of the recent list, without duplicating it.
     pub fn remember(&mut self, path: &std::path::Path) {
         let path = path.display().to_string();
@@ -288,5 +340,41 @@ impl Config {
             // enough for it.
             f32::from(self.measure) * f32::from(self.text_size) * 0.55
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Two windows, each with its own copy of the settings: one opens a
+    /// file, then the other, which never saw that, changes the text size.
+    /// The file stays in the recent list.
+    #[test]
+    fn a_setting_changed_in_one_window_leaves_the_others_keys_alone() {
+        let dir = std::env::temp_dir().join(format!("pencil-test-config-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let handler =
+            cosmic_config::Config::with_custom_path(crate::APP_ID, Config::VERSION, dir.clone())
+                .expect("a scratch configuration");
+
+        let mut first = Config::default();
+        let before = first.clone();
+        first.remember(std::path::Path::new("/tmp/pencil-recent.md"));
+        first.write_changed(&before, &handler).expect("written");
+
+        let mut second = Config::default();
+        let before = second.clone();
+        second.text_size = 20;
+        second.write_changed(&before, &handler).expect("written");
+
+        let on_disk = Config::get_entry(&handler).unwrap_or_else(|(_, config)| config);
+        assert_eq!(on_disk.text_size, 20);
+        assert_eq!(
+            on_disk.recent,
+            vec!["/tmp/pencil-recent.md".to_owned()],
+            "the other window's recent file was written over"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

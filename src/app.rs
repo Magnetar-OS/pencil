@@ -225,6 +225,9 @@ enum NavTarget {
 pub struct App {
     core: Core,
     config: Config,
+    /// The settings as last read from or written to disk, so a write puts
+    /// down only what this window changed.
+    persisted: Config,
     config_handler: Option<cosmic::cosmic_config::Config>,
 
     schema: Schema,
@@ -719,6 +722,7 @@ impl cosmic::Application for App {
 
         let mut app = Self {
             core,
+            persisted: config.clone(),
             config,
             config_handler: handler,
             keymap: Keymap::base(&schema),
@@ -1461,7 +1465,24 @@ impl cosmic::Application for App {
                 self.config.measure = measure;
                 self.write_config();
             }
-            Message::ConfigChanged(config) => self.config = config,
+            // Another window changed the settings. What was built from them
+            // is rebuilt: the dictionary (spell checking, its language, a
+            // word learnt there) and the theme.
+            Message::ConfigChanged(config) => {
+                let speller = self.config.spell_check != config.spell_check
+                    || self.config.spell_language != config.spell_language
+                    || self.config.learnt_words != config.learnt_words;
+                let theme = self.config.appearance != config.appearance;
+                self.persisted = config.clone();
+                self.config = config;
+                if speller {
+                    self.reload_speller();
+                    self.refresh();
+                }
+                if theme {
+                    return cosmic::command::set_theme(self.config.appearance().theme());
+                }
+            }
 
             Message::TabActivate(id) => {
                 self.tabs.activate(id);
@@ -1779,12 +1800,14 @@ impl App {
     }
 
     fn write_config(&mut self) {
-        if let Some(handler) = &self.config_handler
-            && let Err(errors) = self.config.write_entry(handler)
-        {
+        let Some(handler) = &self.config_handler else {
+            return;
+        };
+        match self.config.write_changed(&self.persisted, handler) {
+            Ok(()) => self.persisted = self.config.clone(),
             // A setting that will not persist is worth saying once, in the
             // place errors go, rather than swallowing.
-            self.error = Some(format!("{errors:?}"));
+            Err(error) => self.error = Some(error.to_string()),
         }
     }
 }
@@ -2014,5 +2037,23 @@ mod tests {
         let _ = app.update(Message::Opened(a, Format::Markdown, "# A\n".to_owned()));
         assert_eq!(app.tabs.iter().count(), 2, "the file was opened twice");
         assert_eq!(app.tabs.active(), first);
+    }
+
+    /// Spell checking turned off in another window turns off here too.
+    #[test]
+    fn a_settings_change_from_another_window_reaches_the_speller() {
+        let mut app = app();
+        app.config.spell_check = true;
+        app.config.spell_language = "en_US".to_owned();
+        app.reload_speller();
+        if app.speller.is_none() {
+            // No en_US dictionary installed: nothing to turn off.
+            return;
+        }
+
+        let mut elsewhere = app.config.clone();
+        elsewhere.spell_check = false;
+        let _ = app.update(Message::ConfigChanged(elsewhere));
+        assert!(app.speller.is_none(), "the speller outlived the setting");
     }
 }

@@ -13,6 +13,13 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A settings change made in another Pencil window now takes effect here too:
+  turning spell checking off or on, changing its language, learning a word, or
+  changing the theme. Only the change arrived before; the dictionary and theme
+  stayed as they were until a restart.
+- Changing a setting in one window no longer writes that window's older copy
+  of every other setting, so a file just opened in another window stays in
+  Open Recent.
 - Opening a file that is already open — from the Open dialog, Open Recent or
   the command line — switches to its tab instead of opening a second copy
   that would save over the first.
