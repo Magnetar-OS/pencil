@@ -194,20 +194,35 @@ pub async fn read(path: PathBuf) -> Result<(PathBuf, Format, String), Error> {
 /// one. A crash mid-write is the one time a text editor can lose a day's work,
 /// and a rename is atomic on every filesystem this will meet.
 ///
+/// A rename puts a *new* file in place, so two things the old file carried
+/// are carried over explicitly: its permissions — a note kept `0600` must not
+/// come back world-readable — and, for a path that is a symlink, the link
+/// itself, by writing beside and over the file it names rather than over the
+/// link. The path handed back is the one asked for, link and all.
+///
 /// # Errors
 ///
 /// [`Error`] when the file cannot be written.
 pub async fn write(path: PathBuf, contents: String) -> Result<PathBuf, Error> {
-    let temporary = path.with_extension(format!(
+    // A file that does not exist yet has nothing to resolve.
+    let target = tokio::fs::canonicalize(&path)
+        .await
+        .unwrap_or_else(|_| path.clone());
+    let temporary = target.with_extension(format!(
         "{}.pencil-tmp",
-        path.extension().and_then(|e| e.to_str()).unwrap_or("")
+        target.extension().and_then(|e| e.to_str()).unwrap_or("")
     ));
     tokio::fs::write(&temporary, contents.as_bytes())
         .await
         .map_err(|e| Error::io(&temporary, &e))?;
-    tokio::fs::rename(&temporary, &path)
+    if let Ok(existing) = tokio::fs::metadata(&target).await {
+        tokio::fs::set_permissions(&temporary, existing.permissions())
+            .await
+            .map_err(|e| Error::io(&temporary, &e))?;
+    }
+    tokio::fs::rename(&temporary, &target)
         .await
-        .map_err(|e| Error::io(&path, &e))?;
+        .map_err(|e| Error::io(&target, &e))?;
     Ok(path)
 }
 

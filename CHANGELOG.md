@@ -11,6 +11,12 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Pencil appears once in the applications menu, under Office. It also claimed
   Utility, so COSMIC's app library showed it in two folders.
 
+### Fixed
+
+- Saving keeps the file's permissions: a `0600` note was rewritten with the
+  default `0644`. Saving a file opened through a symlink updates the file the
+  link points at instead of replacing the link with a copy.
+
 ## [1.1.0] - 2026-09-22
 
 ### Changed

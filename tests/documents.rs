@@ -176,3 +176,72 @@ async fn reading_a_file_that_is_not_there_says_which() {
         "the message should name the file: {error}"
     );
 }
+
+/// A private note stays private: the rename puts a new file in place, and
+/// that file must carry the old one's permissions, not the umask's.
+#[tokio::test]
+async fn a_save_keeps_the_files_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = std::env::temp_dir().join("pencil-test-permissions");
+    let _ = tokio::fs::remove_dir_all(&dir).await;
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .expect("scratch folder");
+    let path = dir.join("private.md");
+    tokio::fs::write(&path, "# Private\n")
+        .await
+        .expect("the original");
+    tokio::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+        .await
+        .expect("made private");
+
+    pencil::document::write(path.clone(), "# Still private\n".to_owned())
+        .await
+        .expect("the save");
+
+    let mode = tokio::fs::metadata(&path)
+        .await
+        .expect("stat")
+        .permissions()
+        .mode();
+    assert_eq!(
+        mode & 0o777,
+        0o600,
+        "the save widened the file's permissions"
+    );
+    let _ = tokio::fs::remove_dir_all(&dir).await;
+}
+
+/// Saving a document opened through a symlink updates the file the link
+/// points at, and leaves the link a link.
+#[tokio::test]
+async fn a_save_through_a_symlink_writes_the_file_it_names() {
+    let dir = std::env::temp_dir().join("pencil-test-symlink");
+    let _ = tokio::fs::remove_dir_all(&dir).await;
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .expect("scratch folder");
+    let real = dir.join("real.md");
+    let link = dir.join("link.md");
+    tokio::fs::write(&real, "# One\n")
+        .await
+        .expect("the original");
+    tokio::fs::symlink(&real, &link).await.expect("the link");
+
+    pencil::document::write(link.clone(), "# Two\n".to_owned())
+        .await
+        .expect("the save");
+
+    let meta = tokio::fs::symlink_metadata(&link).await.expect("lstat");
+    assert!(
+        meta.file_type().is_symlink(),
+        "the link was replaced by a copy"
+    );
+    let contents = tokio::fs::read_to_string(&real).await.expect("read back");
+    assert_eq!(
+        contents, "# Two\n",
+        "the file the link names was not updated"
+    );
+    let _ = tokio::fs::remove_dir_all(&dir).await;
+}
