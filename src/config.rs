@@ -172,9 +172,9 @@ pub struct Config {
     /// Whether code blocks wrap. Off is what a programmer wants and on is what
     /// a reader wants, so it is a setting rather than a decision.
     pub wrap_code: bool,
-    /// Whether prose is spell checked.
     /// Modal editing: every key goes to the Vim state machine first.
     pub vim: bool,
+    /// Whether prose is spell checked.
     pub spell_check: bool,
     /// Which dictionary, as a Hunspell language tag such as `en_US`.
     ///
