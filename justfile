@@ -86,7 +86,20 @@ test *args:
 # Offline: the metainfo names a remote icon on `main`, which appstreamcli cannot
 # fetch from a branch that has not been merged yet.
 validate-metadata:
-    desktop-file-validate {{desktop-src}}
+    #!/usr/bin/env bash
+    set -uo pipefail
+    # `Categories=COSMIC;` is what COSMIC's own apps and applets ship, but
+    # desktop-file-validate 0.27 (Ubuntu noble, which CI has) rejects the
+    # unregistered value as an error; 0.28 downgraded it to a hint. Matching
+    # the platform matters more than the older validator, so that one error is
+    # tolerated and every other error still fails the recipe. Same rule as
+    # circle's, slate's and envelope's `validate-metadata`.
+    output=$(desktop-file-validate {{desktop-src}} 2>&1 || true)
+    [ -n "$output" ] && printf '%s\n' "$output"
+    if printf '%s\n' "$output" | grep 'error:' | grep -qv 'unregistered value "COSMIC"'; then
+        echo 'validate-metadata: desktop entry validation failed' >&2
+        exit 1
+    fi
     appstreamcli validate --no-net {{metainfo-src}}
 
 # Also checks that the remote icon and URLs actually resolve
