@@ -13,6 +13,7 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Built against cosmic-ext-nib 1.2.0: links open on Ctrl+click, rich text copies as HTML, and Markdown keeps code, escapes, titles and nested lists through a save and reopen.
 - Pencil appears once in the applications menu, under Office. It also claimed
   Utility, so COSMIC's app library showed it in two folders.
 
