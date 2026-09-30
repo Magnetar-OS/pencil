@@ -32,6 +32,7 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Rebuilt against the current COSMIC libraries (libcosmic `6af8b70`).
 - **The package and the command are `magnetar-pencil`.** Other repositories
   ship an unrelated `pencil` (Evolus Pencil, a prototyping tool, 3.x) under
   that package and command name. Sharing it meant the repository pacman read
