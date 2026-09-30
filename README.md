@@ -21,6 +21,9 @@ There is no web engine anywhere in it.
 - **Colours code blocks** by language.
 - **Follows the desktop** into dark mode, and the desktop's own text engine for
   layout — a word is the same width here as in every other COSMIC application.
+- **One window, tabs in it.** A file opened while Pencil is running — from
+  the file manager or the command line — opens as a tab in that window.
+  **New window** starts another.
 
 ## What each format keeps
 
@@ -49,9 +52,13 @@ under that package and command name, and the two install side by side. A
 `pencil` package from this project, 1.2.0 or earlier, is replaced on upgrade.
 
 ```sh
-magnetar-pencil notes.md     # open a file, or start one by that name
-magnetar-pencil ~/notes      # open a folder
+magnetar-pencil notes.md          # open a file, or start one by that name
+magnetar-pencil a.md b.html       # several: each gets a tab
+magnetar-pencil ~/notes           # open a folder
+magnetar-pencil --new-window      # a second window, rather than a tab
 ```
+
+While a window is up, these hand their files to it and exit.
 
 From a checkout:
 

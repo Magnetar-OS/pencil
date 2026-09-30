@@ -6,6 +6,15 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- A file opened while Pencil is running — "Open With" in the file manager, or
+  `magnetar-pencil notes.md` in a terminal — opens as a tab in the window that
+  is already up, instead of starting a second window. Several files can be
+  opened at once; each gets a tab.
+- `magnetar-pencil --new-window` starts a second window, as the New window
+  button does.
+
 ### Fixed
 
 - Pencil can be started from launchers and file managers that use GIO (GNOME

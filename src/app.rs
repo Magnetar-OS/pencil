@@ -35,6 +35,7 @@ use nib_spell::Speller;
 use crate::config::{Appearance, CaretShape, Config};
 use crate::document::{Converters, Document, Format};
 use crate::fl;
+use crate::launch::{self, Flags};
 use crate::project::{self, Project};
 
 /// The application's unique identifier.
@@ -582,13 +583,18 @@ impl App {
         })
     }
 
-    /// Opens a file, reusing the tab when the one showing is empty and
-    /// untouched — a new window should not leave a blank tab behind.
+    /// Opens a file.
     fn load(&mut self, path: PathBuf, format: Format, source: &str) {
         let node = self.converters.parse(format, source);
         let document = Document::over(&self.schema, node, Some(path), format);
         self.error = None;
+        self.place(document);
+    }
 
+    /// Shows a document: in the tab that is showing when that one is empty
+    /// and untouched — a new window should not leave a blank tab behind — and
+    /// in a tab of its own otherwise.
+    fn place(&mut self, document: Document) {
         let replaceable = self.doc().path.is_none()
             && !self.doc().dirty
             && self.doc().state.doc().text_content().trim().is_empty();
@@ -669,6 +675,32 @@ fn open_path(path: PathBuf) -> Task<Message> {
     })
 }
 
+impl App {
+    /// Opens what a launch named: a folder, a file, or a file that is not
+    /// there yet.
+    fn open_given(&mut self, path: PathBuf) -> Task<Message> {
+        // A folder rather than a file: `magnetar-pencil ~/notes` opens the
+        // folder, which is also how a new window inherits the one it came
+        // from.
+        if path.is_dir() {
+            return cosmic::task::message(Message::FolderOpened(path));
+        }
+        if path.exists() {
+            return open_path(path);
+        }
+        // A file that is not there yet, the way `vim notes.md` starts one: an
+        // empty document already named, written there on the first Save.
+        if let Some(tab) = self.tab_for(&path) {
+            return self.update(Message::TabActivate(tab));
+        }
+        let mut document = Document::empty(&self.schema);
+        document.format = Format::of(&path);
+        document.path = Some(path);
+        self.place(document);
+        Task::none()
+    }
+}
+
 /// The schema's name for a toolbar command's mark.
 fn mark_name(command: &str) -> &str {
     match command {
@@ -682,7 +714,7 @@ fn mark_name(command: &str) -> &str {
 
 impl cosmic::Application for App {
     type Executor = cosmic::executor::Default;
-    type Flags = Option<PathBuf>;
+    type Flags = Flags;
     type Message = Message;
 
     const APP_ID: &'static str = APP_ID;
@@ -739,33 +771,40 @@ impl cosmic::Application for App {
         app.reload_speller();
         app.refresh();
 
-        let theme = cosmic::command::set_theme(app.config.appearance().theme());
-        let task = match flags {
-            // A folder rather than a file: `pencil ~/notes` opens the folder,
-            // which is also how a new window inherits the one it came from.
-            Some(path) if path.is_dir() => cosmic::task::message(Message::FolderOpened(path)),
-            // A file that is not there yet, the way `vim notes.md` starts
-            // one: an empty document already named, written there on the
-            // first Save.
-            Some(path) if !path.exists() => {
-                let format = Format::of(&path);
-                let first = app.tabs.active();
-                if let Some(document) = app.tabs.data_mut::<Document>(first) {
-                    document.path = Some(path);
-                    document.format = format;
-                }
-                app.retitle();
-                Task::none()
+        let mut tasks = vec![cosmic::command::set_theme(app.config.appearance().theme())];
+        for path in flags.paths() {
+            tasks.push(app.open_given(path));
+        }
+        (app, Task::batch(tasks))
+    }
+
+    /// A second launch handing over what it was asked to open.
+    ///
+    /// The window has already been raised by the time this is called; what is
+    /// left is to open the files, each in a tab, exactly as the first launch
+    /// would have.
+    fn dbus_activation(&mut self, message: cosmic::dbus_activation::Message) -> Task<Message> {
+        use cosmic::dbus_activation::Details;
+
+        let paths = match message.msg {
+            Details::ActivateAction { action, args } if action == launch::OPEN => {
+                launch::paths(&args)
             }
-            Some(path) => cosmic::task::future(async move {
-                match crate::document::read(path).await {
-                    Ok((path, format, source)) => Message::Opened(path, format, source),
-                    Err(error) => Message::Failed(error.to_string()),
-                }
-            }),
-            None => Task::none(),
+            // A launcher that speaks the interface itself sends the files as
+            // URLs rather than through a second `magnetar-pencil`.
+            Details::Open { url } => url
+                .iter()
+                .filter_map(|url| url.to_file_path().ok())
+                .collect(),
+            // Nothing to open, or an action Pencil does not have: raising the
+            // window was the whole request.
+            Details::Activate | Details::ActivateAction { .. } => Vec::new(),
         };
-        (app, Task::batch([theme, task]))
+        let mut tasks = Vec::with_capacity(paths.len());
+        for path in paths {
+            tasks.push(self.open_given(path));
+        }
+        Task::batch(tasks)
     }
 
     fn header_start(&self) -> Vec<Element<'_, Message>> {
@@ -1160,6 +1199,9 @@ impl cosmic::Application for App {
                 let folder = self.project.as_ref().map(|p| p.root().to_path_buf());
                 return cosmic::task::future(async move {
                     let mut command = tokio::process::Command::new(exe);
+                    // Said out loud: without it the new process would hand
+                    // its arguments to this window and exit.
+                    command.arg(launch::NEW_WINDOW);
                     if let Some(folder) = folder {
                         command.arg(folder);
                     }
@@ -1831,7 +1873,7 @@ mod tests {
     /// An application with one empty tab, writing no settings: a test must
     /// not rewrite the user's recent-files list.
     fn app() -> App {
-        let (mut app, _) = <App as cosmic::Application>::init(Core::default(), None);
+        let (mut app, _) = <App as cosmic::Application>::init(Core::default(), Flags::default());
         app.config_handler = None;
         app
     }
@@ -2080,13 +2122,95 @@ mod tests {
         assert!(app.project.is_none());
     }
 
-    /// `pencil new.md` for a file that does not exist yet starts a document
+    /// What a second `magnetar-pencil <paths>` sends the running window.
+    fn handed_over(paths: &[&std::path::Path]) -> cosmic::dbus_activation::Message {
+        use cosmic::app::CosmicFlags as _;
+
+        let flags = Flags::new(paths.iter().map(|path| path.to_path_buf()));
+        cosmic::dbus_activation::Message {
+            activation_token: None,
+            desktop_startup_id: None,
+            msg: cosmic::dbus_activation::Details::ActivateAction {
+                action: flags.action().expect("there is something to open").clone(),
+                args: flags.args().into_iter().map(str::to_owned).collect(),
+            },
+        }
+    }
+
+    /// A file opened while Pencil is running — a second launch handing its
+    /// command line over — opens as a tab in the window that is up, and a
+    /// file that is already open there is switched to.
+    #[test]
+    fn a_second_launch_opens_its_files_as_tabs_in_this_window() {
+        let mut app = app();
+        edited(&mut app, Some("/tmp/pencil-already-open.md"));
+        let first = app.tabs.active();
+
+        let a = std::env::temp_dir().join("pencil-handed-over-a.md");
+        let b = std::env::temp_dir().join("pencil-handed-over-b.html");
+        let _ = std::fs::remove_file(&a);
+        let _ = std::fs::remove_file(&b);
+        let _ = app.dbus_activation(handed_over(&[&a, &b]));
+
+        assert_eq!(app.tabs.iter().count(), 3, "each file gets a tab");
+        assert_eq!(app.doc().path.as_deref(), Some(b.as_path()));
+        assert_eq!(app.doc().format, Format::Html);
+        assert!(app.tab_for(&a).is_some());
+        assert!(app.tabs.data::<Document>(first).unwrap().dirty);
+
+        let _ = app.dbus_activation(handed_over(&[&a]));
+        assert_eq!(app.tabs.iter().count(), 3, "the file was opened twice");
+        assert_eq!(app.doc().path.as_deref(), Some(a.as_path()));
+    }
+
+    /// A launch with nothing to open raises the window and changes nothing
+    /// in it, and an action Pencil does not have is not mistaken for a file.
+    #[test]
+    fn a_second_launch_with_nothing_to_open_opens_nothing() {
+        use cosmic::dbus_activation::{Details, Message as Activation};
+
+        let mut app = app();
+        for msg in [
+            Details::Activate,
+            Details::ActivateAction {
+                action: "print".to_owned(),
+                args: vec!["file:///tmp/pencil-not-this.md".to_owned()],
+            },
+        ] {
+            let _ = app.dbus_activation(Activation {
+                activation_token: None,
+                desktop_startup_id: None,
+                msg,
+            });
+        }
+        assert_eq!(app.tabs.iter().count(), 1);
+        assert_eq!(app.doc().path, None);
+    }
+
+    /// A launcher that speaks the activation interface itself sends URLs.
+    #[test]
+    fn files_sent_as_urls_open_as_tabs_too() {
+        let mut app = app();
+        let path = std::env::temp_dir().join("pencil-sent-as-url.md");
+        let _ = std::fs::remove_file(&path);
+        let _ = app.dbus_activation(cosmic::dbus_activation::Message {
+            activation_token: None,
+            desktop_startup_id: None,
+            msg: cosmic::dbus_activation::Details::Open {
+                url: vec![url::Url::from_file_path(&path).unwrap()],
+            },
+        });
+        assert_eq!(app.doc().path.as_deref(), Some(path.as_path()));
+    }
+
+    /// `magnetar-pencil new.md` for a file that does not exist yet starts a document
     /// by that name, instead of an untitled one.
     #[test]
     fn a_file_named_on_the_command_line_that_is_not_there_yet_is_started() {
         let path = std::env::temp_dir().join("pencil-not-there-yet.html");
         let _ = std::fs::remove_file(&path);
-        let (mut app, _) = <App as cosmic::Application>::init(Core::default(), Some(path.clone()));
+        let (mut app, _) =
+            <App as cosmic::Application>::init(Core::default(), Flags::new([path.clone()]));
         app.config_handler = None;
         assert_eq!(app.doc().path.as_deref(), Some(path.as_path()));
         assert_eq!(app.doc().format, Format::Html);

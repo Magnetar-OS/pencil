@@ -10,6 +10,7 @@ pub mod chrome;
 pub mod config;
 pub mod document;
 pub mod i18n;
+pub mod launch;
 pub mod print;
 pub mod project;
 

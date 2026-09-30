@@ -18,12 +18,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # dbus-daemon: tests/handover.rs starts a private session bus of its
+      # own to hand a second launch's files to a stand-in for the first.
       - name: System libraries the build needs
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libxkbcommon-dev pkg-config \
-            desktop-file-utils appstream
+            desktop-file-utils appstream dbus-daemon
 
       # rustup reads rust-toolchain.toml on the first cargo invocation and
       # installs the pinned channel with its components. No toolchain action
