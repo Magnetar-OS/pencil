@@ -1,5 +1,6 @@
-# Name of the application's binary.
-name := 'pencil'
+# Name of the application's binary. Not `pencil`: other repositories ship an
+# unrelated `pencil` (Evolus Pencil) that owns that command and package name.
+name := 'magnetar-pencil'
 # The unique ID of the application.
 appid := 'com.magnetaros.Pencil'
 

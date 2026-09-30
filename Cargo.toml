@@ -51,8 +51,11 @@ features = ["about", "single-instance", "wgpu", "xdg-portal", "tokio"]
 name = "pencil"
 path = "src/lib.rs"
 
+# The command is `magnetar-pencil`, not `pencil`: other repositories ship an
+# unrelated `pencil` (Evolus Pencil) that owns /usr/bin/pencil and the package
+# name. The crate keeps its name, so `RUST_LOG=pencil=debug` still works.
 [[bin]]
-name = "pencil"
+name = "magnetar-pencil"
 path = "src/main.rs"
 
 [dev-dependencies]

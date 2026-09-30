@@ -7,7 +7,11 @@
 # The RK_* variables are exported by the release workflow; nfpm expands
 # ${VAR} itself. You never edit the version here.
 
-name: pencil
+# Not `pencil`: other repositories ship an unrelated `pencil` (Evolus Pencil,
+# the prototyping tool, 3.x) under that name, with /usr/bin/pencil. Sharing the
+# name meant whichever repository pacman read first decided which program
+# `pacman -S pencil` installed, and the two could not be installed together.
+name: magnetar-pencil
 arch: ${RK_DEB_ARCH}
 platform: linux
 version: ${RK_VERSION}
@@ -23,16 +27,41 @@ description: |
 
 # Runtime dependencies, per distro. PROVISIONAL — derived from the -sys
 # crates in Cargo.lock; after the first CI build, trim against
-# `ldd target/release/pencil`. The arch names are validated for real by
+# `ldd target/release/magnetar-pencil`. The arch names are validated for real by
 # arch-repo.yml's container install test.
+#
+# Migration from this project's own `pencil` package (1.2.0 and earlier). The
+# version bound is what keeps it from touching Evolus Pencil, which is 3.x: an
+# unversioned `replaces: pencil` would uninstall it on -Syu. `provides` keeps
+# anything that still asks for `pencil` by name (an installer's package list,
+# an optional dependency) resolving to this package wherever no other `pencil`
+# is on offer; it is unversioned, so it never meets the versioned conflict.
 overrides:
   deb:
+    replaces:
+      - pencil (<= 1.2.0)
+    conflicts:
+      - pencil (<= 1.2.0)
+    provides:
+      - pencil
     depends:
       - libxkbcommon0
   rpm:
+    replaces:
+      - pencil <= 1.2.0
+    conflicts:
+      - pencil <= 1.2.0
+    provides:
+      - pencil
     depends:
       - libxkbcommon
   archlinux:
+    replaces:
+      - pencil<=1.2.0
+    conflicts:
+      - pencil<=1.2.0
+    provides:
+      - pencil
     depends:
       - libxkbcommon
 

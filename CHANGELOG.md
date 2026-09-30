@@ -6,6 +6,18 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The package and the command are `magnetar-pencil`.** Other repositories
+  ship an unrelated `pencil` (Evolus Pencil, a prototyping tool, 3.x) under
+  that package and command name. Sharing it meant the repository pacman read
+  first decided which program `pacman -S pencil` installed, the repository
+  audit failed wherever both were enabled, and the two could not be installed
+  together. The package replaces this project's own `pencil` 1.2.0 and earlier
+  on upgrade and leaves Evolus Pencil alone. A terminal habit or a keyboard
+  shortcut that runs `pencil` needs changing to `magnetar-pencil`; the
+  applications menu entry and "Open With" are unchanged.
+
 ## [1.2.0] - 2026-09-29
 
 ### Added

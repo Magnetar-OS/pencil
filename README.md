@@ -35,6 +35,31 @@ The status bar marks a format that cannot hold everything the document does
 with a `•`, once, where the format is already named — rather than a dialog on
 every save that nobody reads.
 
+## Install
+
+On Arch-based systems with the `[magnetar]` repository:
+
+```sh
+sudo pacman -S magnetar-pencil
+```
+
+The package and the command are `magnetar-pencil`. `pencil` is taken: other
+repositories ship an unrelated `pencil` (Evolus Pencil, a prototyping tool)
+under that package and command name, and the two install side by side. A
+`pencil` package from this project, 1.2.0 or earlier, is replaced on upgrade.
+
+```sh
+magnetar-pencil notes.md     # open a file, or start one by that name
+magnetar-pencil ~/notes      # open a folder
+```
+
+From a checkout:
+
+```sh
+just build-release
+just install-user      # or `sudo just install` for the whole system
+```
+
 ## Building
 
 ```
@@ -42,6 +67,8 @@ just build-release
 just run
 just check-all      # what CI runs, cheapest failure first
 ```
+
+`RUST_LOG=pencil=debug` for logs.
 
 ## The engine
 
