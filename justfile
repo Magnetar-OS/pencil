@@ -101,6 +101,14 @@ validate-metadata:
         echo 'validate-metadata: desktop entry validation failed' >&2
         exit 1
     fi
+    # `DBusActivatable=true` makes GIO launchers call org.freedesktop.Application
+    # on the application's bus name and never run Exec. Pencil serves no such
+    # interface and installs no D-Bus service file, so with the key set those
+    # launchers start nothing; desktop-file-validate accepts it all the same.
+    if grep -q '^DBusActivatable=true' {{desktop-src}}; then
+        echo 'validate-metadata: the desktop entry claims D-Bus activation, which nothing serves' >&2
+        exit 1
+    fi
     appstreamcli validate --no-net {{metainfo-src}}
 
 # Also checks that the remote icon and URLs actually resolve

@@ -6,6 +6,12 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Pencil can be started from launchers and file managers that use GIO (GNOME
+  Files and its "Open With", `gio open`). The desktop entry declared D-Bus
+  activation, which Pencil has never served, so those started nothing at all.
+
 ### Changed
 
 - **The package and the command are `magnetar-pencil`.** Other repositories
