@@ -13,5 +13,6 @@ pub mod i18n;
 pub mod launch;
 pub mod print;
 pub mod project;
+pub mod recovery;
 
 pub use app::{APP_ID, App};

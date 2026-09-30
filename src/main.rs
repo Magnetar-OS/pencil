@@ -3,7 +3,7 @@
 //! Pencil — a rich text editor for the COSMIC desktop.
 
 use pencil::launch::{Arguments, Flags};
-use pencil::{app, i18n};
+use pencil::{app, i18n, recovery};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The desktop's languages, not the process's locale: a COSMIC session sets
@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // whatever directory each runs in. A path that does not exist yet is a new
     // document to be saved there.
     let arguments = Arguments::parse(std::env::args_os().skip(1));
-    let flags = Flags::new(arguments.paths);
+    let flags = Flags::new(arguments.paths, recovery::default_dir());
 
     // Closing the window is a request the application answers, not a close:
     // unsaved tabs are asked about first (`App::quit`).

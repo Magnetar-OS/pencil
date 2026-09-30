@@ -183,6 +183,10 @@ pub struct Config {
     /// Words the user has taught it, kept with the settings so they survive a
     /// document being closed.
     pub learnt_words: Vec<String>,
+    /// Whether unsaved changes are copied to the recovery directory, to be
+    /// offered back after a crash. Off for anyone who would rather an unsaved
+    /// document existed nowhere but in the window.
+    pub autosave: bool,
 }
 
 impl Default for Config {
@@ -202,6 +206,7 @@ impl Default for Config {
             spell_check: true,
             spell_language: String::new(),
             learnt_words: Vec::new(),
+            autosave: true,
         }
     }
 }
@@ -273,6 +278,7 @@ impl Config {
             spell_check,
             spell_language,
             learnt_words,
+            autosave,
         );
         tx.commit()
     }

@@ -129,3 +129,33 @@ application = Application
 editing = Editing
 keys = Keys
 vim-bindings = Vim bindings
+
+# Recovery: unsaved documents kept across a crash
+recovery = Recovery
+autosave = Keep unsaved changes for recovery
+recovery-title = Unsaved documents were found
+recovery-body = Pencil closed without these being saved. Restore a document to carry on with it, or discard it for good.
+recovery-restore = Restore
+recovery-discard = Discard
+recovery-later = Decide later
+recovery-changed = the file has changed since
+recovery-kept-minutes = { $minutes ->
+    [0] kept less than a minute ago
+    [one] kept a minute ago
+   *[other] kept { $minutes } minutes ago
+}
+recovery-kept-hours = { $hours ->
+    [one] kept an hour ago
+   *[other] kept { $hours } hours ago
+}
+recovery-kept-days = { $days ->
+    [one] kept a day ago
+   *[other] kept { $days } days ago
+}
+recovery-unavailable = Unsaved changes are not being kept for recovery: { $reason }
+recovery-failed = Unsaved changes could not be kept for recovery: { $reason }
+recovery-not-removed = A recovery copy could not be removed: { $reason }
+recovery-unreadable = { $count ->
+    [one] A recovery file could not be read and was left where it is
+   *[other] { $count } recovery files could not be read and were left where they are
+}: { $file }: { $reason }

@@ -11,7 +11,9 @@
 //! of the engine: an application built on it is mostly a file dialog and a
 //! toolbar.
 
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use cosmic::Application as _;
 use cosmic::app::{Core, Task};
@@ -37,9 +39,18 @@ use crate::document::{Converters, Document, Format};
 use crate::fl;
 use crate::launch::{self, Flags};
 use crate::project::{self, Project};
+use crate::recovery;
 
 /// The application's unique identifier.
 pub const APP_ID: &str = "com.magnetaros.Pencil";
+
+/// How often what is unsaved is copied to the recovery directory.
+///
+/// The most a crash can cost, in other words — short enough to be a sentence
+/// or two, long enough that a document being typed into is not written to the
+/// disk on every pause. Losing focus takes a copy at once, whatever the clock
+/// says.
+const AUTOSAVE_EVERY: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug)]
 pub enum Message {
@@ -137,8 +148,65 @@ pub enum Message {
     /// What the system clipboard held, on the way to being pasted.
     Pasted(Option<String>),
 
+    /// Time to copy what is unsaved to the recovery directory: the clock
+    /// said so, or the window lost focus.
+    Autosave,
+    /// A round of copies finished: each tab's, where it went, and the
+    /// document it holds or why it could not be written — or why the round
+    /// itself did not run.
+    Snapshotted(Result<Vec<Snapshotted>, String>),
+    /// Bring back a document a window that died left unsaved.
+    Restore(usize),
+    /// Throw one away instead.
+    DiscardRecovered(usize),
+    /// Leave what has not been answered for the next launch.
+    RecoveryLater,
+    SetAutosave(bool),
+
     /// Nothing to do. What a task returns when its work was the point.
     Ignore,
+}
+
+/// An unsaved tab's copy in the recovery directory.
+struct Kept {
+    file: PathBuf,
+    /// The document as it was copied, so a tab that has not changed since is
+    /// not written again.
+    doc: Node,
+}
+
+/// One recovery copy to write: whose it is, where it goes, and what goes in.
+struct SnapshotJob {
+    tab: segmented_button::Entity,
+    file: PathBuf,
+    contents: String,
+    doc: Node,
+}
+
+/// How one recovery copy went: whose it is, where it went, and the document
+/// it now holds or why it could not be written.
+type Snapshotted = (segmented_button::Entity, PathBuf, Result<Node, String>);
+
+/// A document a window that died left unsaved, as it is offered back.
+pub(crate) struct Offered {
+    pub(crate) snapshot: recovery::Snapshot,
+    /// Whether the document's file has been written since the copy was
+    /// taken. Looked up once, when the copy is found, not on every frame the
+    /// offer is drawn.
+    pub(crate) changed: bool,
+}
+
+/// Writes a round of recovery copies, reporting each one's outcome: one that
+/// fails does not stop the others being kept.
+fn write_snapshots(jobs: Vec<SnapshotJob>) -> Vec<Snapshotted> {
+    jobs.into_iter()
+        .map(|job| {
+            let result = recovery::write(&job.file, &job.contents)
+                .map(|()| job.doc)
+                .map_err(|error| error.to_string());
+            (job.tab, job.file, result)
+        })
+        .collect()
 }
 
 /// What is waiting on the unsaved-changes question.
@@ -258,6 +326,21 @@ pub struct App {
     /// The Vim mode, for the status bar. The widget owns the state machine;
     /// this is the last thing it said.
     mode: nib_model::vim::Mode,
+
+    /// This window's place in the recovery directory. `None` when nothing is
+    /// kept: there is no state directory, or it could not be used.
+    session: Option<recovery::Session>,
+    /// The copy each unsaved tab has there.
+    kept: HashMap<segmented_button::Entity, Kept>,
+    /// A round of copies is being written.
+    snapshotting: bool,
+    /// Another round was asked for while that one was.
+    snapshot_again: bool,
+    /// What windows that died left unsaved, waiting to be restored or
+    /// discarded.
+    recovered: Vec<Offered>,
+    /// The offer was put off until the next launch.
+    recovery_later: bool,
 }
 
 impl App {
@@ -351,15 +434,157 @@ impl App {
     /// keeps the window and every tab as it was.
     fn quit(&mut self, discarded: Vec<segmented_button::Entity>) -> Task<Message> {
         let Some(id) = self.next_unsaved(&discarded) else {
-            return cosmic::iced::exit();
+            return self.exit();
         };
         let task = self.update(Message::TabActivate(id));
         self.pending = Some(Pending::Quit(discarded));
         task
     }
 
+    /// Closes the window. Every document in it has been saved or knowingly
+    /// discarded by now, so nothing is left to recover.
+    fn exit(&mut self) -> Task<Message> {
+        if let Some(session) = self.session.take()
+            && let Err(error) = session.end()
+        {
+            // No window left to say it in. What could not be removed is
+            // offered back on the next launch, which errs the safe way.
+            eprintln!("pencil: recovery copies were not removed: {error}");
+        }
+        cosmic::iced::exit()
+    }
+
+    /// Copies what is unsaved to the recovery directory.
+    ///
+    /// The writing happens off the thread that draws: it ends in an `fsync`.
+    fn snapshot(&mut self) -> Task<Message> {
+        // One round at a time, so an older copy can never land on a newer.
+        if self.snapshotting {
+            self.snapshot_again = true;
+            return Task::none();
+        }
+        let jobs = self.snapshot_jobs();
+        if jobs.is_empty() {
+            return Task::none();
+        }
+        self.snapshotting = true;
+        cosmic::task::future(async move {
+            Message::Snapshotted(
+                tokio::task::spawn_blocking(move || write_snapshots(jobs))
+                    .await
+                    .map_err(|error| error.to_string()),
+            )
+        })
+    }
+
+    /// What a round of copies has to write: the tabs with unsaved changes
+    /// that are not already kept as they stand.
+    fn snapshot_jobs(&mut self) -> Vec<SnapshotJob> {
+        if !self.config.autosave {
+            return Vec::new();
+        }
+        let Some(session) = &mut self.session else {
+            return Vec::new();
+        };
+        let taken = SystemTime::now();
+        let mut jobs = Vec::new();
+        for tab in self.tabs.iter() {
+            let Some(document) = self.tabs.data::<Document>(tab) else {
+                continue;
+            };
+            if !document.dirty {
+                continue;
+            }
+            let doc = document.state.doc();
+            let kept = self.kept.get(&tab);
+            if kept.is_some_and(|kept| &kept.doc == doc) {
+                continue;
+            }
+            let file = kept.map_or_else(|| session.slot(), |kept| kept.file.clone());
+            // As HTML whatever the document's own format: it is the one that
+            // loses nothing, and what is being kept is the document, not the
+            // file it would become.
+            let contents = recovery::render(
+                document.path.as_deref(),
+                document.format,
+                taken,
+                &self.converters.write(Format::Html, doc),
+            );
+            jobs.push(SnapshotJob {
+                tab,
+                file,
+                contents,
+                doc: doc.clone(),
+            });
+        }
+        jobs
+    }
+
+    /// Drops a tab's recovery copy: what it held is on disk under its own
+    /// name, or closed, or knowingly discarded.
+    fn forget(&mut self, tab: segmented_button::Entity) {
+        if let Some(kept) = self.kept.remove(&tab) {
+            self.discard(&kept.file);
+        }
+    }
+
+    /// Removes a recovery copy, saying so when it will not go.
+    fn discard(&mut self, file: &Path) {
+        if let Err(error) = recovery::discard(file) {
+            self.error = Some(fl!("recovery-not-removed", reason = error.to_string()));
+        }
+    }
+
+    /// Opens a document a dead window left unsaved, as unsaved as it was.
+    fn restore(&mut self, snapshot: recovery::Snapshot) {
+        let node = self.converters.parse(Format::Html, &snapshot.body);
+
+        // A tab already on that file takes the recovered text when it has
+        // nothing of its own to lose. When it has, the recovered document
+        // opens beside it without a name: two tabs on one file save over each
+        // other, and neither set of changes is this function's to drop.
+        let open = snapshot.path.as_deref().and_then(|path| self.tab_for(path));
+        let edited = open.is_some_and(|tab| {
+            self.tabs
+                .data::<Document>(tab)
+                .is_some_and(|document| document.dirty)
+        });
+        let path = if edited { None } else { snapshot.path };
+        let mut document = Document::over(&self.schema, node.clone(), path, snapshot.format);
+        document.dirty = true;
+        match open {
+            Some(tab) if !edited => {
+                self.tabs.activate(tab);
+                *self.doc_mut() = document;
+                self.refresh();
+            }
+            _ => self.place(document),
+        }
+        self.retitle();
+        self.rebuild_nav();
+
+        // The dead window's copy becomes this tab's, so the document is
+        // covered from the moment it is back rather than from the next round.
+        let tab = self.tabs.active();
+        match self
+            .session
+            .as_mut()
+            .map(|session| session.adopt(&snapshot.file))
+        {
+            Some(Ok(file)) => {
+                self.forget(tab);
+                self.kept.insert(tab, Kept { file, doc: node });
+            }
+            Some(Err(error)) => {
+                self.error = Some(fl!("recovery-failed", reason = error.to_string()));
+            }
+            None => {}
+        }
+    }
+
     /// Removes a tab and activates a neighbour.
     fn close_tab(&mut self, id: segmented_button::Entity) {
+        self.forget(id);
         let position = self.tabs.position(id);
         self.tabs.remove(id);
         // The tab to the left, or the first one — whichever still exists.
@@ -729,6 +954,13 @@ impl cosmic::Application for App {
 
     fn init(core: Core, flags: Self::Flags) -> (Self, Task<Message>) {
         let schema = basic::schema();
+        // What is kept for recovery, and what windows that died left there.
+        let (session, abandoned, unavailable) =
+            match flags.recovery.as_deref().map(recovery::Session::begin) {
+                Some(Ok((session, abandoned))) => (Some(session), abandoned, None),
+                Some(Err(error)) => (None, recovery::Abandoned::default(), Some(error)),
+                None => (None, recovery::Abandoned::default(), None),
+            };
         let handler = Config::handler().ok();
         let config = handler
             .as_ref()
@@ -767,9 +999,36 @@ impl cosmic::Application for App {
             pending: None,
             after_save: None,
             mode: nib_model::vim::Mode::Normal,
+            session,
+            kept: HashMap::new(),
+            snapshotting: false,
+            snapshot_again: false,
+            recovered: abandoned
+                .snapshots
+                .into_iter()
+                .map(|snapshot| Offered {
+                    changed: snapshot.changed_since(),
+                    snapshot,
+                })
+                .collect(),
+            recovery_later: false,
         };
         app.reload_speller();
         app.refresh();
+
+        // Said rather than passed over: a window that keeps nothing for
+        // recovery, or a copy that is there and cannot be offered, is
+        // something to know before the crash rather than after.
+        if let Some(error) = unavailable {
+            app.error = Some(fl!("recovery-unavailable", reason = error.to_string()));
+        } else if let Some((file, reason)) = abandoned.unreadable.first() {
+            app.error = Some(fl!(
+                "recovery-unreadable",
+                count = abandoned.unreadable.len(),
+                file = file.display().to_string(),
+                reason = reason.clone()
+            ));
+        }
 
         let mut tasks = vec![cosmic::command::set_theme(app.config.appearance().theme())];
         for path in flags.paths() {
@@ -958,7 +1217,12 @@ impl cosmic::Application for App {
     }
 
     fn dialog(&self) -> Option<Element<'_, Message>> {
-        let pending = self.pending.as_ref()?;
+        let Some(pending) = self.pending.as_ref() else {
+            // With nothing being asked about, what dead windows left unsaved
+            // is offered back.
+            return (!self.recovered.is_empty() && !self.recovery_later)
+                .then(|| self.recovery_dialog());
+        };
         // Closing the window says how many more questions are coming.
         let body = match pending {
             Pending::Quit(discarded) => {
@@ -1009,7 +1273,14 @@ impl cosmic::Application for App {
         // The settings are shared with every other COSMIC application's
         // configuration store, so a change made elsewhere arrives here rather
         // than being noticed on the next launch.
+        // The clock only runs while there is something it could be for.
+        let autosave = if self.config.autosave && self.session.is_some() {
+            cosmic::iced::time::every(AUTOSAVE_EVERY).map(|_| Message::Autosave)
+        } else {
+            Subscription::none()
+        };
         Subscription::batch([
+            autosave,
             cosmic::cosmic_config::config_subscription::<_, Config>(
                 std::any::TypeId::of::<Config>(),
                 Self::APP_ID.into(),
@@ -1024,6 +1295,15 @@ impl cosmic::Application for App {
             // document's: the editor's keymap produces transactions, and none
             // of these is one.
             cosmic::iced::event::listen_with(|event, _status, _window| {
+                // Looking away is when a copy is cheapest to take and a
+                // crash least likely to be noticed: take one now rather than
+                // at the next tick.
+                if matches!(
+                    event,
+                    cosmic::iced::Event::Window(cosmic::iced::window::Event::Unfocused)
+                ) {
+                    return Some(Message::Autosave);
+                }
                 let cosmic::iced::Event::Keyboard(cosmic::iced::keyboard::Event::KeyPressed {
                     key,
                     modifiers,
@@ -1353,6 +1633,10 @@ impl cosmic::Application for App {
                     .tabs
                     .data::<Document>(tab)
                     .is_some_and(|document| !document.dirty);
+                // What was kept for recovery is on disk under its own name.
+                if clean {
+                    self.forget(tab);
+                }
                 if self
                     .after_save
                     .as_ref()
@@ -1527,8 +1811,12 @@ impl cosmic::Application for App {
                     || self.config.spell_language != config.spell_language
                     || self.config.learnt_words != config.learnt_words;
                 let theme = self.config.appearance != config.appearance;
+                let stopped = self.config.autosave && !config.autosave;
                 self.persisted = config.clone();
                 self.config = config;
+                if stopped {
+                    self.forget_all();
+                }
                 if speller {
                     self.reload_speller();
                     self.refresh();
@@ -1548,6 +1836,7 @@ impl cosmic::Application for App {
                 // The last tab is emptied rather than removed: a window with
                 // no document in it is a window with nothing to do.
                 if self.tabs.iter().count() <= 1 {
+                    self.forget(self.tabs.active());
                     *self.doc_mut() = Document::empty(&self.schema);
                     self.retitle();
                     self.refresh();
@@ -1718,6 +2007,65 @@ impl cosmic::Application for App {
                     self.apply(tr.clone());
                 }
             }
+            Message::SetAutosave(on) => {
+                self.config.autosave = on;
+                self.write_config();
+                // Off means nothing of the user's is kept where they did not
+                // put it, from now — so what is there goes too.
+                if !on {
+                    self.forget_all();
+                }
+                return self.snapshot();
+            }
+            Message::Autosave => return self.snapshot(),
+            Message::Snapshotted(written) => {
+                self.snapshotting = false;
+                let written = written.unwrap_or_else(|reason| {
+                    self.error = Some(fl!("recovery-failed", reason = reason));
+                    Vec::new()
+                });
+                for (tab, file, result) in written {
+                    match result {
+                        Ok(doc) => {
+                            // Saved, closed, or the setting turned off while
+                            // the copy was being written: it is not wanted.
+                            let wanted = self.config.autosave
+                                && self
+                                    .tabs
+                                    .data::<Document>(tab)
+                                    .is_some_and(|document| document.dirty);
+                            if wanted {
+                                self.kept.insert(tab, Kept { file, doc });
+                            } else {
+                                self.kept.remove(&tab);
+                                self.discard(&file);
+                            }
+                        }
+                        Err(reason) => {
+                            self.error = Some(fl!("recovery-failed", reason = reason));
+                        }
+                    }
+                }
+                if std::mem::take(&mut self.snapshot_again) {
+                    return self.snapshot();
+                }
+            }
+            Message::Restore(index) => {
+                if index < self.recovered.len() {
+                    let offered = self.recovered.remove(index);
+                    self.restore(offered.snapshot);
+                }
+            }
+            Message::DiscardRecovered(index) => {
+                if index < self.recovered.len() {
+                    let offered = self.recovered.remove(index);
+                    self.discard(&offered.snapshot.file);
+                    if let Some(session) = &mut self.session {
+                        session.sweep();
+                    }
+                }
+            }
+            Message::RecoveryLater => self.recovery_later = true,
             Message::Learn(word) => {
                 if let Some(speller) = &mut self.speller {
                     speller.learn(&word);
@@ -1831,6 +2179,19 @@ impl App {
 
     pub(crate) fn speller(&self) -> Option<&Speller> {
         self.speller.as_ref()
+    }
+
+    /// What windows that died left unsaved, still waiting for an answer.
+    pub(crate) fn recovered(&self) -> &[Offered] {
+        &self.recovered
+    }
+
+    /// Drops every recovery copy this window has.
+    fn forget_all(&mut self) {
+        let tabs: Vec<_> = self.kept.keys().copied().collect();
+        for tab in tabs {
+            self.forget(tab);
+        }
     }
 
     /// Whether a mark is on where the caret is, so its button can be shown
@@ -2122,11 +2483,67 @@ mod tests {
         assert!(app.project.is_none());
     }
 
+    /// A scratch recovery directory, removed when the test ends.
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(name: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!(
+                "pencil-test-app-recovery-{name}-{}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+            Self(dir)
+        }
+
+        /// An application keeping its unsaved documents here.
+        fn app(&self) -> App {
+            let (mut app, _) = <App as cosmic::Application>::init(
+                Core::default(),
+                Flags::new([], Some(self.0.clone())),
+            );
+            app.config_handler = None;
+            app.config.autosave = true;
+            app
+        }
+
+        /// The recovery copies on disk, in every window's directory.
+        fn copies(&self) -> usize {
+            std::fs::read_dir(&self.0)
+                .unwrap()
+                .flatten()
+                .filter(|entry| entry.path().is_dir())
+                .flat_map(|entry| std::fs::read_dir(entry.path()).unwrap().flatten())
+                .filter(|entry| entry.path().extension().is_some_and(|e| e == "snapshot"))
+                .count()
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// Types into the active document.
+    fn typed(app: &mut App, text: &str) {
+        let mut tr = app.doc().state.tr();
+        tr.insert_text(text).expect("text goes in at the caret");
+        App::apply(app, tr);
+    }
+
+    /// One round of autosave, run to completion: what the clock or a lost
+    /// focus sets off, without the executor the real one writes on.
+    fn autosaved(app: &mut App) {
+        let jobs = app.snapshot_jobs();
+        let _ = app.update(Message::Snapshotted(Ok(write_snapshots(jobs))));
+    }
+
     /// What a second `magnetar-pencil <paths>` sends the running window.
     fn handed_over(paths: &[&std::path::Path]) -> cosmic::dbus_activation::Message {
         use cosmic::app::CosmicFlags as _;
 
-        let flags = Flags::new(paths.iter().map(|path| path.to_path_buf()));
+        let flags = Flags::new(paths.iter().map(|path| path.to_path_buf()), None);
         cosmic::dbus_activation::Message {
             activation_token: None,
             desktop_startup_id: None,
@@ -2203,6 +2620,241 @@ mod tests {
         assert_eq!(app.doc().path.as_deref(), Some(path.as_path()));
     }
 
+    /// The whole point: text typed and never saved, in a window that then
+    /// dies, is offered by the next one and comes back as it was — unsaved,
+    /// under its own name, marks the file's format could not hold included.
+    #[test]
+    fn unsaved_work_is_offered_back_after_a_crash_and_restored() {
+        let scratch = Scratch::new("restored");
+        let lost = {
+            let mut app = scratch.app();
+            edited(&mut app, Some("/tmp/pencil-recovered.md"));
+            typed(&mut app, "kept across the crash");
+            // Underline: a Markdown file would not have kept it.
+            let mut tr = app.doc().state.tr();
+            let end = app.doc().state.doc().content_size();
+            let underline = app.schema.mark(basic::marks::UNDERLINE, None).unwrap();
+            tr.add_mark(1, end - 1, &underline)
+                .expect("the text takes a mark");
+            App::apply(&mut app, tr);
+            autosaved(&mut app);
+            assert_eq!(scratch.copies(), 1);
+            assert!(app.doc().state.doc().to_string().contains("underline"));
+            app.doc().state.doc().clone()
+            // The window dies here: no save, no close, no exit.
+        };
+
+        let mut app = scratch.app();
+        assert_eq!(app.recovered.len(), 1);
+        assert!(
+            cosmic::Application::dialog(&app).is_some(),
+            "nothing was offered"
+        );
+
+        let _ = app.update(Message::Restore(0));
+        assert!(app.recovered.is_empty());
+        assert_eq!(app.doc().state.doc(), &lost);
+        assert_eq!(
+            app.doc().path.as_deref(),
+            Some(Path::new("/tmp/pencil-recovered.md"))
+        );
+        assert_eq!(app.doc().format, Format::Markdown);
+        assert!(app.doc().dirty, "a restored document is not a saved one");
+        assert_eq!(
+            scratch.copies(),
+            1,
+            "the restored tab is covered from the start, by one copy"
+        );
+
+        // Saved at last: there is nothing left to recover.
+        let tab = app.tabs.active();
+        let _ = app.update(Message::Saved(
+            tab,
+            PathBuf::from("/tmp/pencil-recovered.md"),
+            Format::Markdown,
+            written(&app, tab),
+        ));
+        assert_eq!(scratch.copies(), 0);
+    }
+
+    /// Discarding an offered document removes it for good.
+    #[test]
+    fn a_discarded_recovery_is_not_offered_again() {
+        let scratch = Scratch::new("discarded");
+        {
+            let mut app = scratch.app();
+            typed(&mut app, "not worth keeping");
+            autosaved(&mut app);
+        }
+        let mut app = scratch.app();
+        assert_eq!(app.recovered.len(), 1);
+        let _ = app.update(Message::DiscardRecovered(0));
+        assert!(app.recovered.is_empty());
+        assert_eq!(scratch.copies(), 0);
+        drop(app);
+        assert!(scratch.app().recovered.is_empty());
+    }
+
+    /// "Decide later" closes the offer without losing anything: the next
+    /// launch makes it again.
+    #[test]
+    fn an_offer_put_off_is_made_again_at_the_next_launch() {
+        let scratch = Scratch::new("later");
+        {
+            let mut app = scratch.app();
+            typed(&mut app, "undecided");
+            autosaved(&mut app);
+        }
+        {
+            let mut app = scratch.app();
+            let _ = app.update(Message::RecoveryLater);
+            assert!(cosmic::Application::dialog(&app).is_none());
+            // Closed properly, with nothing of its own unsaved.
+            let _ = app.update(Message::CloseRequested);
+        }
+        assert_eq!(scratch.app().recovered.len(), 1);
+    }
+
+    /// A tab is covered only while it has something unsaved: saving it,
+    /// closing it, or closing the window with its changes discarded each
+    /// remove the copy.
+    #[test]
+    fn a_recovery_copy_goes_when_its_tab_is_saved_closed_or_discarded() {
+        let scratch = Scratch::new("cleared");
+        let mut app = scratch.app();
+
+        // Saved.
+        edited(&mut app, Some("/tmp/pencil-kept-a.md"));
+        typed(&mut app, "a");
+        autosaved(&mut app);
+        assert_eq!(scratch.copies(), 1);
+        let tab = app.tabs.active();
+        let _ = app.update(Message::Saved(
+            tab,
+            PathBuf::from("/tmp/pencil-kept-a.md"),
+            Format::Markdown,
+            written(&app, tab),
+        ));
+        assert_eq!(scratch.copies(), 0, "a saved tab kept its copy");
+
+        // Closed, its changes discarded.
+        app.add_tab(Document::empty(&app.schema.clone()));
+        typed(&mut app, "b");
+        autosaved(&mut app);
+        assert_eq!(scratch.copies(), 1);
+        let tab = app.tabs.active();
+        let _ = app.update(Message::TabClose(tab));
+        let _ = app.update(Message::ConfirmDiscard);
+        assert_eq!(scratch.copies(), 0, "a closed tab kept its copy");
+
+        // The window closed, its changes discarded.
+        typed(&mut app, "c");
+        autosaved(&mut app);
+        assert_eq!(scratch.copies(), 1);
+        let _ = app.update(Message::CloseRequested);
+        let _ = app.update(Message::ConfirmDiscard);
+        assert!(app.session.is_none(), "the window did not close");
+        drop(app);
+        assert!(
+            scratch.app().recovered.is_empty(),
+            "changes discarded on the way out were offered back"
+        );
+    }
+
+    /// Nothing is written again for a tab that has not changed, and a tab
+    /// that was never edited is never written at all.
+    #[test]
+    fn only_what_changed_is_copied() {
+        let scratch = Scratch::new("changed");
+        let mut app = scratch.app();
+        assert!(app.snapshot_jobs().is_empty(), "a clean tab was copied");
+
+        typed(&mut app, "once");
+        autosaved(&mut app);
+        assert!(
+            app.snapshot_jobs().is_empty(),
+            "an unchanged tab was copied"
+        );
+
+        typed(&mut app, " more");
+        let jobs = app.snapshot_jobs();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(
+            jobs[0].file,
+            app.kept[&app.tabs.active()].file,
+            "a tab's copy is replaced, not multiplied"
+        );
+    }
+
+    /// Turning the setting off stops the copies and removes the ones there.
+    #[test]
+    fn turning_recovery_off_keeps_nothing() {
+        let scratch = Scratch::new("off");
+        let mut app = scratch.app();
+        typed(&mut app, "private");
+        autosaved(&mut app);
+        assert_eq!(scratch.copies(), 1);
+
+        let _ = app.update(Message::SetAutosave(false));
+        assert_eq!(scratch.copies(), 0, "the copy outlived the setting");
+        typed(&mut app, " still");
+        assert!(app.snapshot_jobs().is_empty());
+    }
+
+    /// A save that lands while the tab's copy is still being written: the
+    /// copy arrives for a tab with nothing unsaved, and is dropped.
+    #[test]
+    fn a_copy_that_lands_after_the_save_is_dropped() {
+        let scratch = Scratch::new("late");
+        let mut app = scratch.app();
+        edited(&mut app, Some("/tmp/pencil-kept-late.md"));
+        typed(&mut app, "saved meanwhile");
+        let jobs = app.snapshot_jobs();
+
+        let tab = app.tabs.active();
+        let _ = app.update(Message::Saved(
+            tab,
+            PathBuf::from("/tmp/pencil-kept-late.md"),
+            Format::Markdown,
+            written(&app, tab),
+        ));
+        let _ = app.update(Message::Snapshotted(Ok(write_snapshots(jobs))));
+        assert_eq!(scratch.copies(), 0);
+        assert!(app.kept.is_empty());
+    }
+
+    /// The recovered text belongs to a file that is open here with changes
+    /// of its own. Neither is dropped: the recovered document opens beside
+    /// it, unnamed, so the two cannot save over each other.
+    #[test]
+    fn a_recovered_document_does_not_replace_a_tab_with_changes_of_its_own() {
+        let scratch = Scratch::new("beside");
+        {
+            let mut app = scratch.app();
+            edited(&mut app, Some("/tmp/pencil-recovered-twice.md"));
+            typed(&mut app, "from before the crash");
+            autosaved(&mut app);
+        }
+        let mut app = scratch.app();
+        edited(&mut app, Some("/tmp/pencil-recovered-twice.md"));
+        typed(&mut app, "typed since");
+        let mine = app.tabs.active();
+
+        let _ = app.update(Message::Restore(0));
+        assert_eq!(app.tabs.iter().count(), 2);
+        assert_ne!(app.tabs.active(), mine);
+        assert_eq!(app.doc().path, None);
+        assert!(
+            app.doc()
+                .state
+                .doc()
+                .text_content()
+                .contains("from before the crash")
+        );
+        let kept = app.tabs.data::<Document>(mine).unwrap();
+        assert!(kept.state.doc().text_content().contains("typed since"));
+    }
+
     /// `magnetar-pencil new.md` for a file that does not exist yet starts a document
     /// by that name, instead of an untitled one.
     #[test]
@@ -2210,7 +2862,7 @@ mod tests {
         let path = std::env::temp_dir().join("pencil-not-there-yet.html");
         let _ = std::fs::remove_file(&path);
         let (mut app, _) =
-            <App as cosmic::Application>::init(Core::default(), Flags::new([path.clone()]));
+            <App as cosmic::Application>::init(Core::default(), Flags::new([path.clone()], None));
         app.config_handler = None;
         assert_eq!(app.doc().path.as_deref(), Some(path.as_path()));
         assert_eq!(app.doc().format, Format::Html);

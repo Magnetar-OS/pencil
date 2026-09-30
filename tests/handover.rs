@@ -25,6 +25,11 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use zbus::zvariant::OwnedValue;
 
+/// How long the bus and the running window get to answer. Generous, because
+/// it only matters when something is broken: on a loaded machine a short
+/// limit fails a test that was merely slow.
+const PATIENCE: Duration = Duration::from_secs(60);
+
 /// A `dbus-daemon` of our own, torn down on drop.
 struct PrivateBus {
     child: std::process::Child,
@@ -130,7 +135,7 @@ async fn running(bus: &PrivateBus) -> (zbus::Connection, mpsc::UnboundedReceiver
         .expect("a valid bus name")
         .build();
     // Bounded: a bus that never answers must fail the test, not hang it.
-    let connection = tokio::time::timeout(Duration::from_secs(10), building)
+    let connection = tokio::time::timeout(PATIENCE, building)
         .await
         .expect("the private bus answers")
         .expect("connecting to the private bus");
@@ -163,7 +168,7 @@ async fn launch(bus: &PrivateBus, directory: &Path, arguments: &[&str]) -> Outpu
 }
 
 async fn next(received: &mut mpsc::UnboundedReceiver<Call>) -> Call {
-    tokio::time::timeout(Duration::from_secs(10), received.recv())
+    tokio::time::timeout(PATIENCE, received.recv())
         .await
         .expect("the running window was sent nothing")
         .expect("the running window is still there")

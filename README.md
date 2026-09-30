@@ -21,6 +21,11 @@ There is no web engine anywhere in it.
 - **Colours code blocks** by language.
 - **Follows the desktop** into dark mode, and the desktop's own text engine for
   layout — a word is the same width here as in every other COSMIC application.
+- **Keeps what you have not saved.** Every few seconds, and whenever the
+  window loses focus, unsaved changes are copied to a private folder. After a
+  crash, a power cut or a killed session, the next launch offers each document
+  back, to restore or discard. The copy goes the moment the document is saved
+  or closed, and the whole thing can be turned off in Settings.
 - **One window, tabs in it.** A file opened while Pencil is running — from
   the file manager or the command line — opens as a tab in that window.
   **New window** starts another.
@@ -58,7 +63,9 @@ magnetar-pencil ~/notes           # open a folder
 magnetar-pencil --new-window      # a second window, rather than a tab
 ```
 
-While a window is up, these hand their files to it and exit.
+While a window is up, these hand their files to it and exit. The recovery
+copies live in `$XDG_STATE_HOME/pencil/recovery` (`~/.local/state/pencil/recovery`),
+readable by you alone.
 
 From a checkout:
 

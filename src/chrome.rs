@@ -285,6 +285,60 @@ impl App {
         .into()
     }
 
+    /// The offer made at launch when a window that died left documents
+    /// unsaved: each one, with when it was kept, to restore or discard.
+    ///
+    /// One row per document rather than one question for all of them: the
+    /// draft worth having back and the scratch tab nobody wants are not the
+    /// same decision.
+    pub(crate) fn recovery_dialog(&self) -> Element<'_, Message> {
+        let spacing = cosmic::theme::spacing();
+        let now = std::time::SystemTime::now();
+        let mut rows =
+            widget::column::with_capacity(self.recovered().len()).spacing(spacing.space_xs);
+        for (index, offered) in self.recovered().iter().enumerate() {
+            let snapshot = &offered.snapshot;
+            let mut about = vec![kept_ago(now, snapshot.taken)];
+            if let Some(folder) = snapshot.path.as_deref().and_then(std::path::Path::parent) {
+                about.push(folder.display().to_string());
+            }
+            // The file has moved on since: restoring brings back text older
+            // than what is on disk, which is worth knowing first.
+            if offered.changed {
+                about.push(fl!("recovery-changed"));
+            }
+            rows = rows.push(
+                widget::row::with_capacity(3)
+                    .align_y(Alignment::Center)
+                    .spacing(spacing.space_xs)
+                    .push(
+                        widget::column::with_capacity(2)
+                            .push(widget::text::body(crate::document::title(
+                                snapshot.path.as_deref(),
+                            )))
+                            .push(widget::text::caption(about.join(" \u{b7} ")))
+                            .width(Length::Fill),
+                    )
+                    .push(
+                        widget::button::standard(fl!("recovery-restore"))
+                            .on_press(Message::Restore(index)),
+                    )
+                    .push(
+                        widget::button::destructive(fl!("recovery-discard"))
+                            .on_press(Message::DiscardRecovered(index)),
+                    ),
+            );
+        }
+        widget::dialog()
+            .title(fl!("recovery-title"))
+            .body(fl!("recovery-body"))
+            .control(widget::container(widget::scrollable(rows)).max_height(280.0))
+            .tertiary_action(
+                widget::button::text(fl!("recovery-later")).on_press(Message::RecoveryLater),
+            )
+            .into()
+    }
+
     /// The status bar: what this document is, and how much of it there is.
     pub(crate) fn status_bar(&self) -> Element<'_, Message> {
         let spacing = cosmic::theme::spacing();
@@ -386,6 +440,13 @@ impl App {
                     widget::toggler(config.spell_check).on_toggle(Message::SetSpellCheck),
                 ))
                 .add(self.dictionary_setting())
+                .into(),
+            widget::settings::section()
+                .title(fl!("recovery"))
+                .add(widget::settings::item(
+                    fl!("autosave"),
+                    widget::toggler(config.autosave).on_toggle(Message::SetAutosave),
+                ))
                 .into(),
             widget::settings::section()
                 .title(fl!("code"))
@@ -564,6 +625,22 @@ impl App {
 
     fn appearance_labels() -> Vec<String> {
         Appearance::all().iter().map(|a| a.label()).collect()
+    }
+}
+
+/// How long ago a recovery copy was taken, to the nearest unit worth saying.
+fn kept_ago(now: std::time::SystemTime, taken: std::time::SystemTime) -> String {
+    // A clock set back since then reads as "just now" rather than an error.
+    let minutes = now
+        .duration_since(taken)
+        .map_or(0, |elapsed| elapsed.as_secs() / 60);
+    let (hours, days): (u64, u64) = (minutes / 60, minutes / (60 * 24));
+    if hours == 0 {
+        fl!("recovery-kept-minutes", minutes = minutes)
+    } else if days == 0 {
+        fl!("recovery-kept-hours", hours = hours)
+    } else {
+        fl!("recovery-kept-days", days = days)
     }
 }
 

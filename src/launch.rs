@@ -59,13 +59,16 @@ pub struct Flags {
     /// [`OPEN`] when there is something to open. Decided here rather than by
     /// the running window because libcosmic picks the bus method from it.
     action: Option<String>,
+    /// Where unsaved documents are kept between launches, or `None` to keep
+    /// none. See [`crate::recovery`].
+    pub recovery: Option<PathBuf>,
 }
 
 impl Flags {
     /// Flags for opening `paths`, resolved against this process's working
     /// directory.
     #[must_use]
-    pub fn new(paths: impl IntoIterator<Item = PathBuf>) -> Self {
+    pub fn new(paths: impl IntoIterator<Item = PathBuf>, recovery: Option<PathBuf>) -> Self {
         let open: Vec<String> = paths
             .into_iter()
             .filter_map(|path| {
@@ -81,6 +84,7 @@ impl Flags {
         Self {
             action: (!open.is_empty()).then(|| OPEN.to_owned()),
             open,
+            recovery,
         }
     }
 
@@ -140,7 +144,7 @@ mod tests {
     /// raises the running window and nothing more.
     #[test]
     fn a_bare_launch_asks_the_running_window_for_nothing() {
-        let flags = Flags::new(Vec::new());
+        let flags = Flags::new(Vec::new(), None);
         assert!(flags.action().is_none());
         assert!(flags.args().is_empty());
     }
@@ -149,7 +153,10 @@ mod tests {
     /// whatever directory that window was started in.
     #[test]
     fn paths_are_handed_over_absolute() {
-        let flags = Flags::new([PathBuf::from("notes.md"), PathBuf::from("/srv/docs/a b.md")]);
+        let flags = Flags::new(
+            [PathBuf::from("notes.md"), PathBuf::from("/srv/docs/a b.md")],
+            None,
+        );
         assert_eq!(flags.action().map(String::as_str), Some(OPEN));
 
         let here = std::env::current_dir().unwrap();
@@ -168,7 +175,7 @@ mod tests {
     #[test]
     fn a_name_that_is_not_text_survives_the_handover() {
         let odd = PathBuf::from(OsString::from_vec(b"/tmp/caf\xe9\n100%.md".to_vec()));
-        let flags = Flags::new([odd.clone()]);
+        let flags = Flags::new([odd.clone()], None);
         assert_eq!(flags.args().len(), 1);
         assert_eq!(flags.paths(), [odd]);
     }
@@ -177,6 +184,6 @@ mod tests {
     #[test]
     fn what_is_not_a_local_file_is_not_opened() {
         assert!(paths(&["https://example.test/a.md", "notes.md", ""]).is_empty());
-        assert!(Flags::new([PathBuf::new()]).action().is_none());
+        assert!(Flags::new([PathBuf::new()], None).action().is_none());
     }
 }

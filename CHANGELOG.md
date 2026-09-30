@@ -8,6 +8,15 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Unsaved changes are kept for recovery. Every ten seconds, and whenever the
+  window loses focus, each document with unsaved changes is copied to a
+  private folder (`~/.local/state/pencil/recovery`, readable by you alone).
+  If Pencil crashes, is killed, or the power goes, the next launch lists what
+  was left and offers each document back — Restore, Discard, or decide later.
+  A restored document comes back unsaved, under its own name, with everything
+  it held, including formatting its file format could not have saved. The
+  copy is removed when the document is saved or closed, or its changes are
+  discarded. Settings → Recovery turns it off.
 - A file opened while Pencil is running — "Open With" in the file manager, or
   `magnetar-pencil notes.md` in a terminal — opens as a tab in the window that
   is already up, instead of starting a second window. Several files can be

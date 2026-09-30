@@ -43,8 +43,9 @@ swash = "0.2"
 ashpd = "0.12"
 flate2 = "1.1.10"
 # `file://` URLs: how a path crosses the session bus to the window already
-# running. The bus carries text only, and a file name is bytes. Already in the
-# graph through libcosmic, whose activation messages are made of the same type.
+# running, and how a recovery copy names the file it is of. Both carry text
+# only, and a file name is bytes. Already in the graph through libcosmic,
+# whose activation messages are made of the same type.
 url = "2"
 
 [dependencies.libcosmic]
