@@ -146,7 +146,7 @@ mod tests {
     fn a_bare_launch_asks_the_running_window_for_nothing() {
         let flags = Flags::new(Vec::new(), None);
         assert!(flags.action().is_none());
-        assert!(flags.args().is_empty());
+        assert_eq!(flags.args(), Vec::<&str>::new());
     }
 
     /// The paths arrive in the running window as the files they named here,
@@ -183,7 +183,10 @@ mod tests {
     /// What is not a local file is left out rather than guessed at.
     #[test]
     fn what_is_not_a_local_file_is_not_opened() {
-        assert!(paths(&["https://example.test/a.md", "notes.md", ""]).is_empty());
+        assert_eq!(
+            paths(&["https://example.test/a.md", "notes.md", ""]),
+            Vec::<PathBuf>::new()
+        );
         assert!(Flags::new([PathBuf::new()], None).action().is_none());
     }
 }

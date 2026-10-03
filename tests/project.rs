@@ -170,10 +170,10 @@ fn a_new_file_in_a_repository_is_untracked_and_marks_its_folder() {
 
 #[test]
 fn each_status_has_a_marker_and_clean_has_none() {
-    assert!(!Status::Modified.marker().is_empty());
-    assert!(!Status::Staged.marker().is_empty());
-    assert!(!Status::Untracked.marker().is_empty());
-    assert!(Status::Clean.marker().is_empty());
+    assert_ne!(Status::Modified.marker(), "");
+    assert_ne!(Status::Staged.marker(), "");
+    assert_ne!(Status::Untracked.marker(), "");
+    assert_eq!(Status::Clean.marker(), "");
 }
 
 // -- searching the folder --------------------------------------------------

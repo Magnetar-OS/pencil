@@ -467,7 +467,7 @@ mod tests {
         );
 
         let (_session, abandoned) = Session::begin(&scratch.0).unwrap();
-        assert!(abandoned.unreadable.is_empty());
+        assert_eq!(abandoned.unreadable, []);
         assert_eq!(
             abandoned.snapshots,
             [Snapshot {
@@ -522,7 +522,7 @@ mod tests {
         let (_session, abandoned) = Session::begin(&scratch.0).unwrap();
         assert_eq!(abandoned.snapshots.len(), 1);
         assert_eq!(abandoned.snapshots[0].body, "<p>whole</p>");
-        assert!(abandoned.unreadable.is_empty());
+        assert_eq!(abandoned.unreadable, []);
         assert!(!half.exists(), "the half-written file was left behind");
     }
 
@@ -595,7 +595,7 @@ mod tests {
         .unwrap();
 
         let (_session, abandoned) = Session::begin(&scratch.0).unwrap();
-        assert!(abandoned.snapshots.is_empty());
+        assert_eq!(abandoned.snapshots, []);
         assert!(file.exists());
     }
 
@@ -612,7 +612,7 @@ mod tests {
         let (_first, offered) = Session::begin(&scratch.0).unwrap();
         let (_second, again) = Session::begin(&scratch.0).unwrap();
         assert_eq!(offered.snapshots.len(), 1);
-        assert!(again.snapshots.is_empty());
+        assert_eq!(again.snapshots, []);
     }
 
     /// An offer nobody answered is made again: the documents are still there
