@@ -6,6 +6,10 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Rebuilt against the current COSMIC libraries (libcosmic `5a8bd94`).
+
 ## [2.0.0] - 2026-09-30
 
 ### Added
