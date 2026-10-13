@@ -6,6 +6,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-10-13
+
 ### Changed
 
 - Rebuilt against the current COSMIC libraries (libcosmic `a6ac45c`).
@@ -142,7 +144,8 @@ First release.
 - An unsaved-changes guard, zoom, recent files, appearance settings and
   document statistics.
 
-[Unreleased]: https://github.com/Magnetar-OS/pencil/compare/v2.0.1...HEAD
+[Unreleased]: https://github.com/Magnetar-OS/pencil/compare/v2.0.2...HEAD
+[2.0.2]: https://github.com/Magnetar-OS/pencil/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/Magnetar-OS/pencil/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/Magnetar-OS/pencil/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/Magnetar-OS/pencil/compare/v1.1.0...v1.2.0
