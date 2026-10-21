@@ -4,5 +4,5 @@
 # refuses to build at all. (cosmic-conventions.md: "Toolchain pinned in one
 # place".)
 [toolchain]
-channel = "1.99.0"
+channel = "1.99.1"
 components = ["rustfmt", "clippy"]

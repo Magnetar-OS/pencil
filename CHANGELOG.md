@@ -6,6 +6,11 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Rebuilt against the current COSMIC libraries (libcosmic `430f3d4`) with
+  Rust 1.99.1.
+
 ## [2.0.2] - 2026-10-13
 
 ### Changed
