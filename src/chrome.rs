@@ -576,10 +576,17 @@ impl App {
         // The application's own keys are not in the editor's keymap: the
         // keymap makes transactions, and opening a print dialog is not one.
         let mut app = widget::settings::section().title(fl!("application"));
-        for (keys, what) in APPLICATION_SHORTCUTS {
+        // The menu's own table, so the page lists what the keys do. A
+        // command with a second key (zoom in) is listed by its first.
+        let mut listed = Vec::new();
+        for (bind, action) in crate::menu::bindings() {
+            if listed.contains(&action) {
+                continue;
+            }
+            listed.push(action);
             app = app.add(widget::settings::item(
-                (*keys).to_owned(),
-                widget::text::caption(crate::i18n::translate(what)),
+                bind.to_string(),
+                widget::text::caption(action.label()),
             ));
         }
 
@@ -692,21 +699,6 @@ fn describe_binding(binding: &nib_model::keymap::Binding) -> String {
     });
     parts.join("+")
 }
-
-/// The keys the application handles itself, and what they do.
-const APPLICATION_SHORTCUTS: &[(&str, &str)] = &[
-    ("Ctrl + N", "new"),
-    ("Ctrl + Shift + N", "new-window"),
-    ("Ctrl + O", "open"),
-    ("Ctrl + S", "save"),
-    ("Ctrl + Shift + S", "save-as"),
-    ("Ctrl + P", "print"),
-    ("Ctrl + F", "find"),
-    ("Ctrl + Shift + F", "find-in-project"),
-    ("Ctrl + +", "zoom-in"),
-    ("Ctrl + -", "zoom-out"),
-    ("Ctrl + 0", "zoom-reset"),
-];
 
 /// The find bar's text field.
 ///

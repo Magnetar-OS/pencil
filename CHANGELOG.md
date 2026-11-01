@@ -6,6 +6,17 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The header bar has a File, Edit and View menu instead of fifteen icon
+  buttons. Every command has a menu entry with its shortcut beside it.
+  Two of the old buttons were both called "Outline": one showed or hid the
+  sidebar, the other switched it between the document's headings and the
+  open folder. In the View menu they are Sidebar, Headings and Files.
+- The keyboard shortcuts page is built from the same table as the menu
+  and the keys themselves, so it cannot list a key that does something
+  else.
+
 ## [2.0.6] - 2026-11-01
 
 ### Fixed

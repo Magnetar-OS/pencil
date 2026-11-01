@@ -11,6 +11,7 @@ pub mod config;
 pub mod document;
 pub mod i18n;
 pub mod launch;
+pub mod menu;
 pub mod print;
 pub mod project;
 pub mod recovery;

@@ -14,7 +14,13 @@ save-as = Save As…
 undo = Undo
 redo = Redo
 find = Find
-outline = Outline
+# The menu bar.
+menu-file = File
+menu-edit = Edit
+menu-view = View
+# View menu: whether the sidebar shows, and what it shows.
+show-sidebar = Sidebar
+sidebar-headings = Headings
 settings = Settings
 shortcuts = Keyboard shortcuts
 about = About

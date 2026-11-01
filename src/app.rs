@@ -21,7 +21,6 @@ use cosmic::cosmic_config::CosmicConfigEntry as _;
 use cosmic::iced::{Length, Subscription};
 use cosmic::prelude::*;
 use cosmic::widget::{self, nav_bar, segmented_button, tab_bar};
-use cosmic_ext_widgets::header_button;
 
 use nib::{Action, editor};
 use nib_highlight::Highlighter;
@@ -152,6 +151,12 @@ pub enum Message {
     /// Time to copy what is unsaved to the recovery directory: the clock
     /// said so, or the window lost focus.
     Autosave,
+    /// A key pressed with Ctrl or Super, for the application's shortcuts.
+    Key(
+        cosmic::iced::keyboard::Modifiers,
+        cosmic::iced::keyboard::Key,
+        cosmic::iced::keyboard::key::Physical,
+    ),
     /// A round of copies finished: each tab's, where it went, and the
     /// document it holds or why it could not be written — or why the round
     /// itself did not run.
@@ -297,6 +302,8 @@ pub struct App {
 
     schema: Schema,
     keymap: Keymap,
+    /// The application's shortcuts, which the menu bar also prints.
+    key_binds: std::collections::HashMap<cosmic::widget::menu::KeyBind, crate::menu::MenuAction>,
     rules: Vec<InputRule>,
     converters: Converters,
     highlighter: Highlighter,
@@ -983,6 +990,7 @@ impl cosmic::Application for App {
             config,
             config_handler: handler,
             keymap: Keymap::base(&schema),
+            key_binds: crate::menu::key_binds(),
             rules: input_rules::base(&schema),
             converters: Converters::new(&schema),
             highlighter: Highlighter::new(),
@@ -1068,91 +1076,16 @@ impl cosmic::Application for App {
     }
 
     fn header_start(&self) -> Vec<Element<'_, Message>> {
-        // Buttons rather than a menu bar: COSMIC puts the common actions in
-        // the header and everything else in a context drawer, and an editor's
-        // common actions are these three.
-        let focused = self.header_focused();
-        let button = |icon: &'static str, tooltip: String, message: Message| {
-            header_button(widget::icon::from_name(icon), tooltip, message)
-                .focused(focused)
-                .into()
-        };
-        vec![
-            button("document-new-symbolic", fl!("new"), Message::New),
-            button("window-new-symbolic", fl!("new-window"), Message::NewWindow),
-            button("document-open-symbolic", fl!("open"), Message::Open),
-            button("document-print-symbolic", fl!("print"), Message::Print),
-            button("document-save-symbolic", fl!("save"), Message::Save),
-            button("document-save-as-symbolic", fl!("save-as"), Message::SaveAs),
-        ]
-    }
-
-    fn header_end(&self) -> Vec<Element<'_, Message>> {
-        let focused = self.header_focused();
-        let button = |icon: &'static str, tooltip: String, message: Message| {
-            header_button(widget::icon::from_name(icon), tooltip, message)
-                .focused(focused)
-                .into()
-        };
-        let mut buttons = vec![button(
-            "folder-open-symbolic",
-            fl!("open-folder"),
-            Message::OpenFolder,
-        )];
-        if self.project.is_some() {
-            buttons.push(button(
-                "list-remove-symbolic",
-                fl!("close-folder"),
-                Message::CloseFolder,
-            ));
-        }
-        buttons.extend([
-            button(
-                if self.sidebar == Sidebar::Project {
-                    "view-list-symbolic"
-                } else {
-                    "folder-symbolic"
-                },
-                if self.sidebar == Sidebar::Project {
-                    fl!("outline")
-                } else {
-                    fl!("project")
-                },
-                Message::ShowSidebar(if self.sidebar == Sidebar::Project {
-                    Sidebar::Outline
-                } else {
-                    Sidebar::Project
-                }),
-            ),
-            button(
-                "document-open-recent-symbolic",
-                fl!("recent"),
-                Message::OpenContext(ContextPage::Recent),
-            ),
-            button("edit-find-symbolic", fl!("find"), Message::ToggleFind),
-            button("view-list-symbolic", fl!("outline"), Message::ToggleOutline),
-            button(
-                "preferences-system-symbolic",
-                fl!("settings"),
-                Message::OpenContext(ContextPage::Settings),
-            ),
-            button(
-                "accessories-calculator-symbolic",
-                fl!("statistics"),
-                Message::OpenContext(ContextPage::Statistics),
-            ),
-            button(
-                "input-keyboard-symbolic",
-                fl!("shortcuts"),
-                Message::OpenContext(ContextPage::Shortcuts),
-            ),
-            button(
-                "help-about-symbolic",
-                fl!("about"),
-                Message::OpenContext(ContextPage::About),
-            ),
-        ]);
-        buttons
+        // A menu bar, as the suite's other applications and COSMIC's own
+        // editor have. Fifteen icon buttons across the header were too many
+        // to tell apart, and the commands each have a menu entry, with its
+        // shortcut beside it, in the order people look for them.
+        vec![crate::menu::bar(
+            &self.key_binds,
+            self.project.is_some(),
+            self.config.outline,
+            self.sidebar,
+        )]
     }
 
     fn nav_model(&self) -> Option<&nav_bar::Model> {
@@ -1304,31 +1237,17 @@ impl cosmic::Application for App {
                 let cosmic::iced::Event::Keyboard(cosmic::iced::keyboard::Event::KeyPressed {
                     key,
                     modifiers,
+                    physical_key,
                     ..
                 }) = event
                 else {
                     return None;
                 };
-                if !modifiers.command() {
-                    return None;
-                }
-                let cosmic::iced::keyboard::Key::Character(c) = key else {
-                    return None;
-                };
-                match c.as_str() {
-                    "=" | "+" => Some(Message::ZoomIn),
-                    "-" => Some(Message::ZoomOut),
-                    "0" => Some(Message::ZoomReset),
-                    "s" if modifiers.shift() => Some(Message::SaveAs),
-                    "s" => Some(Message::Save),
-                    "o" => Some(Message::Open),
-                    "p" => Some(Message::Print),
-                    "n" if modifiers.shift() => Some(Message::NewWindow),
-                    "n" => Some(Message::New),
-                    "f" if modifiers.shift() => Some(Message::FindInProject),
-                    "f" => Some(Message::ToggleFind),
-                    _ => None,
-                }
+                // What each key does is the menu's table (`crate::menu`),
+                // read in `update`: this closure cannot see the application.
+                modifiers
+                    .command()
+                    .then_some(Message::Key(modifiers, key, physical_key))
             }),
         ])
     }
@@ -1337,6 +1256,15 @@ impl cosmic::Application for App {
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Edit(Action::Edit(tr)) => self.apply(*tr),
+            Message::Key(modifiers, key, physical) => {
+                use cosmic::widget::menu::action::MenuAction as _;
+                let action = self
+                    .key_binds
+                    .iter()
+                    .find(|(bind, _)| bind.matches(modifiers, &key, Some(&physical)))
+                    .map(|(_, action)| *action);
+                return action.map_or_else(Task::none, |action| self.update(action.message()));
+            }
             Message::Clipboard(what) => {
                 let state = self.doc().state.clone();
                 let selection = state.selection();
@@ -2153,15 +2081,6 @@ impl App {
         &self.keymap
     }
 
-    /// Whether the header bar draws as focused: the test libcosmic applies
-    /// to its window controls, so the header buttons dim with them.
-    fn header_focused(&self) -> bool {
-        self.core
-            .focus_chain()
-            .iter()
-            .any(|id| Some(*id) == self.core.main_window_id())
-    }
-
     pub(crate) fn path(&self) -> Option<&std::path::Path> {
         self.doc().path.as_deref()
     }
@@ -2478,15 +2397,41 @@ mod tests {
         assert!(app.speller.is_none(), "the speller outlived the setting");
     }
 
-    /// An open folder can be closed: the header offers it once there is one.
+    /// Closing the open folder closes it. Whether the menu offers it is
+    /// `menu`'s test.
     #[test]
-    fn an_open_folder_has_a_close_button() {
+    fn closing_the_folder_closes_it() {
         let mut app = app();
-        let without = cosmic::Application::header_end(&app).len();
         app.project = Some(Project::open(std::env::temp_dir()));
-        assert_eq!(cosmic::Application::header_end(&app).len(), without + 1);
         let _ = app.update(Message::CloseFolder);
         assert!(app.project.is_none());
+    }
+
+    /// A shortcut runs the command its menu entry does.
+    #[test]
+    fn ctrl_shift_n_and_ctrl_n_reach_different_commands() {
+        use cosmic::iced::keyboard::{
+            Key, Modifiers,
+            key::{Code, Physical},
+        };
+        let app = app();
+        let action = |modifiers| {
+            app.key_binds
+                .iter()
+                .find(|(bind, _)| {
+                    bind.matches(
+                        modifiers,
+                        &Key::Character("n".into()),
+                        Some(&Physical::Code(Code::KeyN)),
+                    )
+                })
+                .map(|(_, action)| *action)
+        };
+        assert_eq!(action(Modifiers::CTRL), Some(crate::menu::MenuAction::New));
+        assert_eq!(
+            action(Modifiers::CTRL | Modifiers::SHIFT),
+            Some(crate::menu::MenuAction::NewWindow)
+        );
     }
 
     /// A scratch recovery directory, removed when the test ends.

@@ -1048,16 +1048,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cosmic-ext-widgets"
-version = "1.3.0"
-source = "git+https://github.com/Magnetar-OS/cosmic-ext-widgets.git?tag=v1.3.0#e30376679f4ee8071461c4fb57388234062324f6"
-dependencies = [
- "iced_accessibility",
- "libcosmic",
- "unicode-segmentation",
-]
-
-[[package]]
 name = "cosmic-freedesktop-icons"
 version = "0.4.0"
 source = "git+https://github.com/pop-os/freedesktop-icons#ab4c57b8e416c6af9297cb04d101889896fd9a92"
@@ -3915,7 +3905,6 @@ dependencies = [
  "cosmic-ext-nib-model",
  "cosmic-ext-nib-spell",
  "cosmic-ext-nib-text",
- "cosmic-ext-widgets",
  "flate2",
  "i18n-embed",
  "i18n-embed-fl",
