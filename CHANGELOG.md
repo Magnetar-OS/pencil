@@ -6,6 +6,11 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Built on the latest releases of its dependencies: tokio 1.54 and rust-embed
+  8.13.
+
 ## [2.1.0] - 2026-11-01
 
 ### Changed

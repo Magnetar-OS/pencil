@@ -34,10 +34,10 @@ nib-spell = { git = "https://github.com/Magnetar-OS/cosmic-ext-nib.git", tag = "
 
 i18n-embed = { version = "0.16", features = ["fluent-system", "desktop-requester"] }
 i18n-embed-fl = "0.10"
-rust-embed = "8.12"
+rust-embed = "8.13"
 open = "5.4"
 thiserror = "2"
-tokio = { version = "1.53", features = ["fs", "rt"] }
+tokio = { version = "1.54", features = ["fs", "rt"] }
 pdf-writer = "0.15.0"
 swash = "0.2"
 ashpd = "0.12"
@@ -64,7 +64,7 @@ name = "magnetar-pencil"
 path = "src/main.rs"
 
 [dev-dependencies]
-tokio = { version = "1.53", features = ["fs", "macros", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1.54", features = ["fs", "macros", "rt-multi-thread", "sync", "time"] }
 # For tests/handover.rs: a stand-in for the running window on a private
 # session bus, and the scratch directories it and the bus live in. zbus is
 # already in the graph through libcosmic.
