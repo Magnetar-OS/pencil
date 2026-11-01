@@ -6,6 +6,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.2] - 2026-11-01
+
 ### Changed
 
 - Built on Nib 1.2.2.
@@ -206,7 +208,8 @@ First release.
 - An unsaved-changes guard, zoom, recent files, appearance settings and
   document statistics.
 
-[Unreleased]: https://github.com/Magnetar-OS/pencil/compare/v2.1.1...HEAD
+[Unreleased]: https://github.com/Magnetar-OS/pencil/compare/v2.1.2...HEAD
+[2.1.2]: https://github.com/Magnetar-OS/pencil/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/Magnetar-OS/pencil/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/Magnetar-OS/pencil/compare/v2.0.6...v2.1.0
 [2.0.6]: https://github.com/Magnetar-OS/pencil/compare/v2.0.5...v2.0.6
