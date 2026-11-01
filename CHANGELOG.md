@@ -14,6 +14,10 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   button have tooltips.
 - In the recovery dialog, the scrollbar sits beside a long list's Discard
   buttons instead of over them.
+- Saving a private (0600) document no longer exposes it to other users
+  while it is written: the temporary file is created with the document's
+  permissions rather than narrowed to them afterwards. The save is synced to
+  disk before it replaces the old file, so a power cut cannot leave it empty.
 
 ## [2.0.5] - 2026-11-01
 

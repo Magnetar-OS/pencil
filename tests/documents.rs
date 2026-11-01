@@ -245,3 +245,47 @@ async fn a_save_through_a_symlink_writes_the_file_it_names() {
     );
     let _ = tokio::fs::remove_dir_all(&dir).await;
 }
+
+/// An interrupted save leaves its temporary behind. The next save must not
+/// open that file — it would keep whatever permissions it was created with —
+/// and must not fail on it either.
+#[tokio::test]
+async fn a_save_replaces_a_leftover_temporary() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = std::env::temp_dir().join("pencil-test-leftover");
+    let _ = tokio::fs::remove_dir_all(&dir).await;
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .expect("scratch folder");
+    let path = dir.join("private.md");
+    tokio::fs::write(&path, "# Private\n")
+        .await
+        .expect("the original");
+    tokio::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+        .await
+        .expect("made private");
+    let leftover = dir.join("private.md.pencil-tmp");
+    tokio::fs::write(&leftover, "half a save")
+        .await
+        .expect("the leftover");
+    tokio::fs::set_permissions(&leftover, std::fs::Permissions::from_mode(0o644))
+        .await
+        .expect("world-readable leftover");
+
+    pencil::document::write(path.clone(), "# Saved\n".to_owned())
+        .await
+        .expect("the save");
+
+    let metadata = tokio::fs::metadata(&path).await.expect("saved file");
+    assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
+    assert_eq!(
+        tokio::fs::read_to_string(&path).await.expect("read back"),
+        "# Saved\n"
+    );
+    assert!(
+        tokio::fs::metadata(&leftover).await.is_err(),
+        "the temporary was renamed away"
+    );
+    let _ = tokio::fs::remove_dir_all(&dir).await;
+}

@@ -37,6 +37,7 @@ use nib_model::schema::Schema;
 use nib_model::search::Heading;
 use nib_model::state::{EditorState, Selection};
 use nib_text::Text;
+use tokio::io::AsyncWriteExt as _;
 
 /// How a document is written down.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -212,10 +213,39 @@ pub async fn write(path: PathBuf, contents: String) -> Result<PathBuf, Error> {
         "{}.pencil-tmp",
         target.extension().and_then(|e| e.to_str()).unwrap_or("")
     ));
-    tokio::fs::write(&temporary, contents.as_bytes())
+    let existing = tokio::fs::metadata(&target).await.ok();
+    // Created with the old file's mode from the start, not narrowed to it
+    // afterwards: a 0600 note written under the umask first would be
+    // readable by others for the length of the write. A leftover temporary
+    // from an interrupted save is removed, since opening it would keep its
+    // permissions.
+    match tokio::fs::remove_file(&temporary).await {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            return Err(Error::io(&temporary, &e));
+        }
+        _ => {}
+    }
+    let mode = existing.as_ref().map_or(0o666, |m| {
+        std::os::unix::fs::PermissionsExt::mode(&m.permissions())
+    });
+    let mut file = tokio::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(mode)
+        .open(&temporary)
         .await
         .map_err(|e| Error::io(&temporary, &e))?;
-    if let Ok(existing) = tokio::fs::metadata(&target).await {
+    file.write_all(contents.as_bytes())
+        .await
+        .map_err(|e| Error::io(&temporary, &e))?;
+    // On disk before it replaces the old file: a power cut after the rename
+    // must not leave an empty document where a whole one was.
+    file.sync_all()
+        .await
+        .map_err(|e| Error::io(&temporary, &e))?;
+    drop(file);
+    // The umask may have taken bits the old file had; give them back.
+    if let Some(existing) = existing {
         tokio::fs::set_permissions(&temporary, existing.permissions())
             .await
             .map_err(|e| Error::io(&temporary, &e))?;
