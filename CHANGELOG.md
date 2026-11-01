@@ -6,6 +6,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-11-01
+
 ### Changed
 
 - Built on the latest releases of its dependencies: tokio 1.54 and rust-embed
@@ -200,7 +202,8 @@ First release.
 - An unsaved-changes guard, zoom, recent files, appearance settings and
   document statistics.
 
-[Unreleased]: https://github.com/Magnetar-OS/pencil/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/Magnetar-OS/pencil/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/Magnetar-OS/pencil/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/Magnetar-OS/pencil/compare/v2.0.6...v2.1.0
 [2.0.6]: https://github.com/Magnetar-OS/pencil/compare/v2.0.5...v2.0.6
 [2.0.5]: https://github.com/Magnetar-OS/pencil/compare/v2.0.4...v2.0.5
