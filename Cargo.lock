@@ -1049,6 +1049,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cosmic-ext-widgets"
+version = "1.2.0"
+source = "git+https://github.com/Magnetar-OS/cosmic-ext-widgets.git?tag=v1.2.0#c0c65ab4ce36434792432a9688917c639b51dfee"
+dependencies = [
+ "iced_accessibility",
+ "libcosmic",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "cosmic-freedesktop-icons"
 version = "0.4.0"
 source = "git+https://github.com/pop-os/freedesktop-icons#ab4c57b8e416c6af9297cb04d101889896fd9a92"
@@ -3917,6 +3927,7 @@ dependencies = [
  "cosmic-ext-nib-model",
  "cosmic-ext-nib-spell",
  "cosmic-ext-nib-text",
+ "cosmic-ext-widgets",
  "flate2",
  "i18n-embed",
  "i18n-embed-fl",
@@ -7000,9 +7011,9 @@ checksum = "cfe53a6657fd280eaa890a3bc59152892ffa3e30101319d168b781ed6529b049"
 
 [[package]]
 name = "yazi"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e01738255b5a16e78bbb83e7fbba0a1e7dd506905cfc53f4622d89015a03fbb5"
+checksum = "ac366ea532fa8ee6a992cec9dea525b1dc284e69702f36c2ab5fbebadc81ec86"
 
 [[package]]
 name = "yoke"

@@ -6,6 +6,14 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The header bar's buttons are drawn whole at Spacious interface density;
+  the header used to cut off the top of every icon. They dim with the window
+  controls when the window is not focused, and their tooltips are also their
+  accessible names.
+- The status bar says "1 block", "1 word" and "1 character" in the singular.
+
 ## [2.0.4] - 2026-11-01
 
 ### Changed

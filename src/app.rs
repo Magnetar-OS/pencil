@@ -21,6 +21,7 @@ use cosmic::cosmic_config::CosmicConfigEntry as _;
 use cosmic::iced::{Length, Subscription};
 use cosmic::prelude::*;
 use cosmic::widget::{self, nav_bar, segmented_button, tab_bar};
+use cosmic_ext_widgets::header_button;
 
 use nib::{Action, editor};
 use nib_highlight::Highlighter;
@@ -1070,13 +1071,11 @@ impl cosmic::Application for App {
         // Buttons rather than a menu bar: COSMIC puts the common actions in
         // the header and everything else in a context drawer, and an editor's
         // common actions are these three.
+        let focused = self.header_focused();
         let button = |icon: &'static str, tooltip: String, message: Message| {
-            widget::tooltip(
-                widget::button::icon(widget::icon::from_name(icon).size(16)).on_press(message),
-                widget::text::body(tooltip),
-                widget::tooltip::Position::Bottom,
-            )
-            .into()
+            header_button(widget::icon::from_name(icon), tooltip, message)
+                .focused(focused)
+                .into()
         };
         vec![
             button("document-new-symbolic", fl!("new"), Message::New),
@@ -1089,13 +1088,11 @@ impl cosmic::Application for App {
     }
 
     fn header_end(&self) -> Vec<Element<'_, Message>> {
+        let focused = self.header_focused();
         let button = |icon: &'static str, tooltip: String, message: Message| {
-            widget::tooltip(
-                widget::button::icon(widget::icon::from_name(icon).size(16)).on_press(message),
-                widget::text::body(tooltip),
-                widget::tooltip::Position::Bottom,
-            )
-            .into()
+            header_button(widget::icon::from_name(icon), tooltip, message)
+                .focused(focused)
+                .into()
         };
         let mut buttons = vec![button(
             "folder-open-symbolic",
@@ -2154,6 +2151,15 @@ impl App {
 
     pub(crate) fn keymap(&self) -> &Keymap {
         &self.keymap
+    }
+
+    /// Whether the header bar draws as focused: the test libcosmic applies
+    /// to its window controls, so the header buttons dim with them.
+    fn header_focused(&self) -> bool {
+        self.core
+            .focus_chain()
+            .iter()
+            .any(|id| Some(*id) == self.core.main_window_id())
     }
 
     pub(crate) fn path(&self) -> Option<&std::path::Path> {

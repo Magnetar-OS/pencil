@@ -59,3 +59,26 @@ macro_rules! fl {
         i18n_embed_fl::fl!($crate::i18n::LANGUAGE_LOADER, $message_id, $($args), *)
     }};
 }
+
+#[cfg(test)]
+mod tests {
+    /// Fluent wraps each placeable in Unicode isolation marks; these tests
+    /// compare the visible text.
+    fn plain(text: &str) -> String {
+        text.replace(['\u{2068}', '\u{2069}'], "")
+    }
+
+    #[test]
+    fn status_bar_counts_agree_with_their_number() {
+        assert_eq!(plain(&crate::fl!("block-count", blocks = 1)), "1 block");
+        assert_eq!(plain(&crate::fl!("block-count", blocks = 2)), "2 blocks");
+        assert_eq!(
+            plain(&crate::fl!("word-count", words = 1, characters = 1)),
+            "1 word, 1 character"
+        );
+        assert_eq!(
+            plain(&crate::fl!("word-count", words = 0, characters = 5)),
+            "0 words, 5 characters"
+        );
+    }
+}

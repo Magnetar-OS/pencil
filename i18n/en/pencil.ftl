@@ -42,8 +42,17 @@ matching-word = Word
 matching-regex = Regex
 
 # Status bar
-word-count = { $words } words, { $characters } characters
-block-count = { $blocks } blocks
+word-count = { $words ->
+    [one] { $words } word
+   *[other] { $words } words
+}, { $characters ->
+    [one] { $characters } character
+   *[other] { $characters } characters
+}
+block-count = { $blocks ->
+    [one] { $blocks } block
+   *[other] { $blocks } blocks
+}
 
 # Settings
 text = Text
