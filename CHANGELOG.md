@@ -6,6 +6,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.6] - 2026-11-01
+
 ### Fixed
 
 - Opening or pasting HTML whose `<meta http-equiv>` charset has no value no
@@ -180,7 +182,8 @@ First release.
 - An unsaved-changes guard, zoom, recent files, appearance settings and
   document statistics.
 
-[Unreleased]: https://github.com/Magnetar-OS/pencil/compare/v2.0.5...HEAD
+[Unreleased]: https://github.com/Magnetar-OS/pencil/compare/v2.0.6...HEAD
+[2.0.6]: https://github.com/Magnetar-OS/pencil/compare/v2.0.5...v2.0.6
 [2.0.5]: https://github.com/Magnetar-OS/pencil/compare/v2.0.4...v2.0.5
 [2.0.4]: https://github.com/Magnetar-OS/pencil/compare/v2.0.3...v2.0.4
 [2.0.3]: https://github.com/Magnetar-OS/pencil/compare/v2.0.2...v2.0.3
