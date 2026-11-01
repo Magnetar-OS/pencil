@@ -6,6 +6,15 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Opening or pasting HTML whose `<meta http-equiv>` charset has no value no
+  longer crashes Pencil: built on Nib 1.2.1, which fixes that parser panic.
+- The find bar's previous, next and close buttons and the error bar's close
+  button have tooltips.
+- In the recovery dialog, the scrollbar sits beside a long list's Discard
+  buttons instead of over them.
+
 ## [2.0.5] - 2026-11-01
 
 ### Fixed

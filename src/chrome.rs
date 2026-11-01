@@ -214,14 +214,18 @@ impl App {
                     .class(cosmic::theme::Button::Text)
                     .on_press(Message::CycleMatching),
             )
-            .push(
+            .push(widget::tooltip(
                 widget::button::icon(widget::icon::from_name("go-up-symbolic").size(16))
                     .on_press(Message::FindPrevious),
-            )
-            .push(
+                widget::text::body(fl!("find-previous")),
+                widget::tooltip::Position::Bottom,
+            ))
+            .push(widget::tooltip(
                 widget::button::icon(widget::icon::from_name("go-down-symbolic").size(16))
                     .on_press(Message::FindNext),
-            )
+                widget::text::body(fl!("find-next")),
+                widget::tooltip::Position::Bottom,
+            ))
             .push(widget::tooltip(
                 widget::button::icon(
                     widget::icon::from_name("folder-saved-search-symbolic").size(16),
@@ -229,7 +233,7 @@ impl App {
                 // Greyed rather than hidden: a button that appears when a
                 // folder opens is a button nobody knows is there.
                 .on_press_maybe(project.then_some(Message::FindInProject)),
-                widget::text::caption(fl!("find-in-project")),
+                widget::text::body(fl!("find-in-project")),
                 widget::tooltip::Position::Bottom,
             ))
             .push(widget::text::caption(count).width(Length::Shrink))
@@ -240,10 +244,12 @@ impl App {
             )
             .push(widget::button::text(fl!("replace")).on_press(Message::ReplaceOne))
             .push(widget::button::text(fl!("replace-all")).on_press(Message::ReplaceAll))
-            .push(
+            .push(widget::tooltip(
                 widget::button::icon(widget::icon::from_name("window-close-symbolic").size(16))
                     .on_press(Message::ToggleFind),
-            );
+                widget::text::body(fl!("close-find")),
+                widget::tooltip::Position::Bottom,
+            ));
 
         if let Some(error) = &find.error {
             row = row.push(widget::text::caption(error.clone()));
@@ -275,10 +281,12 @@ impl App {
                 .spacing(spacing.space_xxs)
                 .push(widget::icon::from_name("dialog-error-symbolic").size(16))
                 .push(widget::text::body(error.to_owned()).width(Length::Fill))
-                .push(
+                .push(widget::tooltip(
                     widget::button::icon(widget::icon::from_name("window-close-symbolic").size(16))
                         .on_press(Message::DismissError),
-                ),
+                    widget::text::body(fl!("dismiss")),
+                    widget::tooltip::Position::Bottom,
+                )),
         )
         .class(cosmic::theme::Container::Primary)
         .padding(spacing.space_xxs)
@@ -332,7 +340,14 @@ impl App {
         widget::dialog()
             .title(fl!("recovery-title"))
             .body(fl!("recovery-body"))
-            .control(widget::container(widget::scrollable(rows)).max_height(280.0))
+            // Embedded, so the bar sits beside the rows' Discard buttons
+            // rather than over them once the list is long enough to scroll.
+            .control(
+                widget::container(
+                    widget::scrollable(rows).spacing(cosmic::theme::spacing().space_xxxs),
+                )
+                .max_height(280.0),
+            )
             .tertiary_action(
                 widget::button::text(fl!("recovery-later")).on_press(Message::RecoveryLater),
             )
