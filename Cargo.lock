@@ -971,8 +971,8 @@ dependencies = [
 
 [[package]]
 name = "cosmic-ext-nib"
-version = "1.2.1"
-source = "git+https://github.com/Magnetar-OS/cosmic-ext-nib.git?tag=v1.2.1#f1326dfaf01fdf053b3bfcfa1efc8cf5a4b3403c"
+version = "1.2.2"
+source = "git+https://github.com/Magnetar-OS/cosmic-ext-nib.git?tag=v1.2.2#8d6dbfb17d1af6bca43c205d7645f5385af74c8e"
 dependencies = [
  "cosmic-ext-nib-css",
  "cosmic-ext-nib-html",
@@ -983,16 +983,16 @@ dependencies = [
 
 [[package]]
 name = "cosmic-ext-nib-css"
-version = "1.2.1"
-source = "git+https://github.com/Magnetar-OS/cosmic-ext-nib.git?tag=v1.2.1#f1326dfaf01fdf053b3bfcfa1efc8cf5a4b3403c"
+version = "1.2.2"
+source = "git+https://github.com/Magnetar-OS/cosmic-ext-nib.git?tag=v1.2.2#8d6dbfb17d1af6bca43c205d7645f5385af74c8e"
 dependencies = [
  "cosmic-ext-nib-model",
 ]
 
 [[package]]
 name = "cosmic-ext-nib-highlight"
-version = "1.2.1"
-source = "git+https://github.com/Magnetar-OS/cosmic-ext-nib.git?tag=v1.2.1#f1326dfaf01fdf053b3bfcfa1efc8cf5a4b3403c"
+version = "1.2.2"
+source = "git+https://github.com/Magnetar-OS/cosmic-ext-nib.git?tag=v1.2.2#8d6dbfb17d1af6bca43c205d7645f5385af74c8e"
 dependencies = [
  "cosmic-ext-nib-model",
  "syntect",
@@ -1000,8 +1000,8 @@ dependencies = [
 
 [[package]]
 name = "cosmic-ext-nib-html"
-version = "1.2.1"
-source = "git+https://github.com/Magnetar-OS/cosmic-ext-nib.git?tag=v1.2.1#f1326dfaf01fdf053b3bfcfa1efc8cf5a4b3403c"
+version = "1.2.2"
+source = "git+https://github.com/Magnetar-OS/cosmic-ext-nib.git?tag=v1.2.2#8d6dbfb17d1af6bca43c205d7645f5385af74c8e"
 dependencies = [
  "cosmic-ext-nib-css",
  "cosmic-ext-nib-model",
@@ -1010,8 +1010,8 @@ dependencies = [
 
 [[package]]
 name = "cosmic-ext-nib-markdown"
-version = "1.2.1"
-source = "git+https://github.com/Magnetar-OS/cosmic-ext-nib.git?tag=v1.2.1#f1326dfaf01fdf053b3bfcfa1efc8cf5a4b3403c"
+version = "1.2.2"
+source = "git+https://github.com/Magnetar-OS/cosmic-ext-nib.git?tag=v1.2.2#8d6dbfb17d1af6bca43c205d7645f5385af74c8e"
 dependencies = [
  "cosmic-ext-nib-model",
  "pulldown-cmark",
@@ -1019,8 +1019,8 @@ dependencies = [
 
 [[package]]
 name = "cosmic-ext-nib-model"
-version = "1.2.1"
-source = "git+https://github.com/Magnetar-OS/cosmic-ext-nib.git?tag=v1.2.1#f1326dfaf01fdf053b3bfcfa1efc8cf5a4b3403c"
+version = "1.2.2"
+source = "git+https://github.com/Magnetar-OS/cosmic-ext-nib.git?tag=v1.2.2#8d6dbfb17d1af6bca43c205d7645f5385af74c8e"
 dependencies = [
  "regex",
  "thiserror 2.0.21",
@@ -1029,8 +1029,8 @@ dependencies = [
 
 [[package]]
 name = "cosmic-ext-nib-spell"
-version = "1.2.1"
-source = "git+https://github.com/Magnetar-OS/cosmic-ext-nib.git?tag=v1.2.1#f1326dfaf01fdf053b3bfcfa1efc8cf5a4b3403c"
+version = "1.2.2"
+source = "git+https://github.com/Magnetar-OS/cosmic-ext-nib.git?tag=v1.2.2#8d6dbfb17d1af6bca43c205d7645f5385af74c8e"
 dependencies = [
  "cosmic-ext-nib-model",
  "spellbook",
@@ -1040,8 +1040,8 @@ dependencies = [
 
 [[package]]
 name = "cosmic-ext-nib-text"
-version = "1.2.1"
-source = "git+https://github.com/Magnetar-OS/cosmic-ext-nib.git?tag=v1.2.1#f1326dfaf01fdf053b3bfcfa1efc8cf5a4b3403c"
+version = "1.2.2"
+source = "git+https://github.com/Magnetar-OS/cosmic-ext-nib.git?tag=v1.2.2#8d6dbfb17d1af6bca43c205d7645f5385af74c8e"
 dependencies = [
  "cosmic-ext-nib-model",
  "unicode-segmentation",

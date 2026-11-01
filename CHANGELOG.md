@@ -6,6 +6,10 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Built on Nib 1.2.2.
+
 ## [2.1.1] - 2026-11-01
 
 ### Changed
