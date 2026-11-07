@@ -40,7 +40,10 @@ thiserror = "2"
 tokio = { version = "1.54", features = ["fs", "rt"] }
 pdf-writer = "0.15.0"
 swash = "0.2"
-ashpd = { version = "0.13.13", features = ["print"] }
+# The print portal. Used only for this app's own portal call, never handed to
+# or from libcosmic, so it is on 0.14 (zbus 6, like the app); libcosmic's 0.13
+# copy is linked separately until libcosmic moves.
+ashpd = { version = "0.14.0", features = ["print"] }
 flate2 = "1.1.11"
 # `file://` URLs: how a path crosses the session bus to the window already
 # running, and how a recovery copy names the file it is of. Both carry text

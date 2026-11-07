@@ -6,6 +6,10 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Built on ashpd 0.14, which runs on zbus 6 like the rest of the app.
+
 ## [2.1.3] - 2026-11-07
 
 ### Changed
