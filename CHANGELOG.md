@@ -6,6 +6,10 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Built on ashpd 0.13, as libcosmic now is, and on flate2 1.1.11.
+
 ## [2.1.2] - 2026-11-01
 
 ### Changed

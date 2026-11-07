@@ -23,7 +23,7 @@ use std::process::{Command, Output, Stdio};
 use std::time::Duration;
 
 use tokio::sync::mpsc;
-use zbus::zvariant::OwnedValue;
+use zbus::OwnedVariant;
 
 /// How long the bus and the running window get to answer. Generous, because
 /// it only matters when something is broken: on a loaded machine a short
@@ -105,11 +105,11 @@ struct Running(mpsc::UnboundedSender<Call>);
 
 #[zbus::interface(name = "org.freedesktop.DbusActivation")]
 impl Running {
-    fn activate(&self, _platform_data: HashMap<String, OwnedValue>) {
+    fn activate(&self, _platform_data: HashMap<String, OwnedVariant>) {
         let _ = self.0.send(Call::Activate);
     }
 
-    fn open(&self, uris: Vec<String>, _platform_data: HashMap<String, OwnedValue>) {
+    fn open(&self, uris: Vec<String>, _platform_data: HashMap<String, OwnedVariant>) {
         let _ = self.0.send(Call::Open(uris));
     }
 
@@ -117,7 +117,7 @@ impl Running {
         &self,
         action_name: String,
         parameter: Vec<String>,
-        _platform_data: HashMap<String, OwnedValue>,
+        _platform_data: HashMap<String, OwnedVariant>,
     ) {
         let _ = self.0.send(Call::Action(action_name, parameter));
     }
@@ -128,11 +128,8 @@ impl Running {
 async fn running(bus: &PrivateBus) -> (zbus::Connection, mpsc::UnboundedReceiver<Call>) {
     let (calls, received) = mpsc::unbounded_channel();
     let building = zbus::connection::Builder::address(bus.address.as_str())
-        .expect("a valid bus address")
         .serve_at("/com/magnetaros/Pencil", Running(calls))
-        .expect("serving the activation interface")
         .name(pencil::APP_ID)
-        .expect("a valid bus name")
         .build();
     // Bounded: a bus that never answers must fail the test, not hang it.
     let connection = tokio::time::timeout(PATIENCE, building)

@@ -788,7 +788,8 @@ pub async fn send(pdf: Vec<u8>, title: &str) -> Result<(), String> {
     // the surface through the compositor, and the dialog is perfectly usable
     // unparented. No token either, which is what asks the portal to show its
     // own print dialog rather than reusing a previous answer.
-    let result = match proxy.print(None, title, &file, None, true).await {
+    let options = ashpd::desktop::print::PrintOptions::default().set_modal(true);
+    let result = match proxy.print(None, title, &file, options).await {
         Ok(request) => request.response(),
         Err(error) => Err(error),
     };
