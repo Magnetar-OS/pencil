@@ -3854,7 +3854,7 @@ dependencies = [
 
 [[package]]
 name = "pencil"
-version = "2.1.2"
+version = "2.1.3"
 dependencies = [
  "ashpd",
  "cosmic-ext-nib",
