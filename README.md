@@ -2,12 +2,12 @@
 <div align="center">
 
 <img src="https://raw.githubusercontent.com/Magnetar-OS/.github/main/profile/assets/repos/pencil.svg" width="100%" alt="Pencil — A rich text editor for the COSMIC desktop: Markdown, MDC, MDX, HTML and plain text, with syntax highlighting, spell checking, a project tree and printing.">
-
+<br><br>
 <a href="https://magnetaros.com"><img src="https://raw.githubusercontent.com/Magnetar-OS/.github/main/profile/assets/pill-site.svg" height="40" alt="magnetaros.com"></a>&nbsp;
 <a href="https://github.com/Magnetar-OS/pencil/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Magnetar-OS/.github/main/profile/assets/pill-releases-dark.svg"><img src="https://raw.githubusercontent.com/Magnetar-OS/.github/main/profile/assets/pill-releases-light.svg" height="40" alt="Releases"></picture></a>&nbsp;
 <a href="https://github.com/orgs/Magnetar-OS/repositories"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Magnetar-OS/.github/main/profile/assets/pill-repos-dark.svg"><img src="https://raw.githubusercontent.com/Magnetar-OS/.github/main/profile/assets/pill-repos-light.svg" height="40" alt="All repositories"></picture></a>
 
-<br>
+<p></p>
 
 </div>
 <!-- /magnetar:header -->
