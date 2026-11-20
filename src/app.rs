@@ -972,8 +972,7 @@ impl cosmic::Application for App {
         let handler = Config::handler().ok();
         let config = handler
             .as_ref()
-            .map(|h| Config::get_entry(h).unwrap_or_else(|(_, config)| config))
-            .unwrap_or_default();
+            .map_or_default(|h| Config::get_entry(h).unwrap_or_else(|(_, config)| config));
 
         let mut tabs = segmented_button::SingleSelectModel::default();
         let first = tabs

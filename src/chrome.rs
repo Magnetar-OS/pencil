@@ -541,10 +541,7 @@ impl App {
                 .and_then(|n| n.to_str())
                 .unwrap_or("?")
                 .to_owned();
-            let parent = path
-                .parent()
-                .map(|p| p.display().to_string())
-                .unwrap_or_default();
+            let parent = path.parent().map_or_default(|p| p.display().to_string());
             section = section.add(
                 widget::button::custom(
                     widget::column::with_children(vec![
